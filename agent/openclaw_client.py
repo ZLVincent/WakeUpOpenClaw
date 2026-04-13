@@ -154,7 +154,7 @@ class OpenClawClient:
                 logger.info("OpenClaw stderr: %s", stderr_text[:500])
 
             stdout_text = stdout.decode("utf-8", errors="replace").strip()
-            logger.info("OpenClaw stdout 原始输出 (%d字符): %s", len(stdout_text), stdout_text[:1000])
+            logger.debug("OpenClaw stdout 原始输出 (%d字符): %s", len(stdout_text), stdout_text[:1000])
 
             if not stdout_text:
                 logger.warning("OpenClaw CLI 返回空输出")
@@ -226,19 +226,46 @@ class OpenClawClient:
         return ""
 
     def _parse_json_response(self, json_str: str) -> str:
-        """解析 JSON 格式的 OpenClaw 响应，提取回复文本。"""
+        """
+        解析 JSON 格式的 OpenClaw 响应，提取回复文本。
+
+        OpenClaw --json 输出有两种结构:
+
+        Gateway 模式 (嵌套在 result 中):
+        {
+            "runId": "...",
+            "status": "ok",
+            "summary": "completed",
+            "result": {
+                "payloads": [{"text": "回复内容"}],
+                "meta": {"stopReason": "completed", ...}
+            }
+        }
+
+        Embedded/--local 模式 (顶层):
+        {
+            "payloads": [{"text": "回复内容"}],
+            "meta": {"stopReason": "completed", ...}
+        }
+        """
         try:
             data = json.loads(json_str)
         except json.JSONDecodeError:
             logger.debug("JSON 解析失败: %s", json_str[:200])
             return ""
 
+        # 判断结构: 如果有 result 字段，取 result 作为实际数据
+        if "result" in data and isinstance(data["result"], dict):
+            payload_data = data["result"]
+        else:
+            payload_data = data
+
         # 检查是否有错误
-        meta = data.get("meta", {})
+        meta = payload_data.get("meta", {})
         stop_reason = meta.get("stopReason", "")
         if stop_reason == "error":
             # 优先从 payloads 取错误文本
-            payloads = data.get("payloads", [])
+            payloads = payload_data.get("payloads", [])
             if payloads:
                 err_text = payloads[0].get("text", "")
                 if err_text:
@@ -252,18 +279,21 @@ class OpenClawClient:
                 return f"AI 处理出错: {error_msg}"
 
         # 从 payloads 数组提取文本
-        payloads = data.get("payloads", [])
+        payloads = payload_data.get("payloads", [])
         if payloads:
             texts = [p.get("text", "") for p in payloads if p.get("text")]
             if texts:
                 return "\n".join(texts)
 
-        # 兼容其他格式: 直接取 text / summary
-        text = data.get("text", "") or data.get("summary", "")
+        # 兼容: 直接取 text 字段
+        text = payload_data.get("text", "")
         if text:
             return text
 
-        logger.warning("OpenClaw JSON 中未找到有效文本，keys: %s", list(data.keys()))
+        logger.warning(
+            "OpenClaw JSON 中未找到有效文本，顶层keys: %s, payload_data keys: %s",
+            list(data.keys()), list(payload_data.keys()),
+        )
         return ""
 
     @staticmethod

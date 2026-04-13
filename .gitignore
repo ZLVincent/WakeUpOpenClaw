@@ -1,0 +1,42 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.egg-info/
+dist/
+build/
+*.egg
+
+# Virtual environments
+venv/
+.venv/
+env/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+logs/*.log
+logs/*.log.*
+
+# TTS temp files
+/tmp/wakeup_tts_*
+
+# Models (用户自行下载)
+models/*.ppn
+
+# Secrets / credentials
+.env
+*.key
+
+# PyAudio build artifacts
+portaudio/

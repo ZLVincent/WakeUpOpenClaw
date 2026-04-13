@@ -1,0 +1,2 @@
+将你的 Picovoice Porcupine 自定义唤醒词模型 (.ppn) 文件放在此目录下。
+该文件需要在 https://console.picovoice.ai/ 训练后下载 Linux ARM64 版本。

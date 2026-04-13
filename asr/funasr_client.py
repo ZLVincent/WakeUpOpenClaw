@@ -14,6 +14,7 @@ FunASR WebSocket 客户端模块
 
 import asyncio
 import json
+import ssl
 import time
 from typing import Callable, Optional
 
@@ -31,26 +32,45 @@ class FunASRClient:
     Parameters
     ----------
     server_url : str
-        FunASR 服务的 WebSocket 地址，如 "ws://localhost:10095"
+        FunASR 服务的 WebSocket 地址。
+        - 离线模式 (offline): 默认 ws://localhost:10095
+        - 实时模式 (online/2pass): 默认 wss://localhost:10096 (SSL)
+        如果 FunASR 关闭了 SSL，则使用 ws://localhost:10096
     mode : str
         识别模式: "offline" / "online" / "2pass"
     hotwords : str
         热词，空格分隔
     use_itn : bool
         是否使用逆文本归一化
+    ssl_enabled : bool
+        是否启用 SSL。FunASR 实时服务默认开启 SSL，
+        如果已关闭 SSL (--ssl 0) 则设为 False
     """
 
     def __init__(
         self,
-        server_url: str = "ws://localhost:10095",
+        server_url: str = "wss://localhost:10096",
         mode: str = "2pass",
         hotwords: str = "",
         use_itn: bool = True,
+        ssl_enabled: bool = True,
     ):
         self.server_url = server_url
         self.mode = mode
         self.hotwords = hotwords
         self.use_itn = use_itn
+        self.ssl_enabled = ssl_enabled
+
+    def _get_ssl_context(self) -> ssl.SSLContext | None:
+        """构造 SSL 上下文。FunASR 默认使用自签名证书，需跳过验证。"""
+        if not self.ssl_enabled:
+            return None
+        if not self.server_url.startswith("wss://"):
+            return None
+        ssl_context = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+        ssl_context.check_hostname = False
+        ssl_context.verify_mode = ssl.CERT_NONE
+        return ssl_context
 
     async def recognize(
         self,
@@ -86,6 +106,7 @@ class FunASRClient:
                 self.server_url,
                 ping_interval=None,
                 max_size=None,
+                ssl=self._get_ssl_context(),
             ) as ws:
                 logger.debug("FunASR WebSocket 连接已建立")
 
@@ -239,6 +260,7 @@ class FunASRClient:
                 self.server_url,
                 ping_interval=None,
                 open_timeout=3,
+                ssl=self._get_ssl_context(),
             ) as ws:
                 await ws.close()
             logger.info("FunASR 服务连接正常: %s", self.server_url)

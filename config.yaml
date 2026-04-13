@@ -88,6 +88,10 @@ tts:
   player: "mpv"
   # 播放器参数
   player_args: ["--no-terminal", "--really-quiet"]
+  # HTTP/SOCKS 代理地址 (edge-tts 需要访问 speech.platform.bing.com)
+  # 示例: "http://127.0.0.1:7890" 或 "socks5://127.0.0.1:1080"
+  # 不需要代理时设为 null 或删除此行
+  proxy: "http://127.0.0.1:7890"
 
 # 音频配置
 audio:

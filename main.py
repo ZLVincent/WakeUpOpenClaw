@@ -204,6 +204,7 @@ class VoiceAssistant:
             volume=tts_cfg.get("volume", "+0%"),
             player=tts_cfg.get("player", "mpv"),
             player_args=tts_cfg.get("player_args", ["--no-terminal", "--really-quiet"]),
+            proxy=tts_cfg.get("proxy"),
         )
 
         # 对话配置

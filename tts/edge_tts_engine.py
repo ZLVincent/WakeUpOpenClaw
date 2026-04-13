@@ -34,6 +34,8 @@ class EdgeTTSEngine:
         播放器命令，如 "mpv", "aplay"
     player_args : list[str]
         播放器额外参数
+    proxy : str | None
+        HTTP/SOCKS 代理地址，如 "http://127.0.0.1:7890"
     """
 
     def __init__(
@@ -43,12 +45,17 @@ class EdgeTTSEngine:
         volume: str = "+0%",
         player: str = "mpv",
         player_args: Optional[list[str]] = None,
+        proxy: Optional[str] = None,
     ):
         self.voice = voice
         self.rate = rate
         self.volume = volume
         self.player = player
         self.player_args = player_args or ["--no-terminal", "--really-quiet"]
+        self.proxy = proxy
+
+        if self.proxy:
+            logger.info("TTS 使用代理: %s", self.proxy)
 
         # 临时文件目录
         self._temp_dir = tempfile.mkdtemp(prefix="wakeup_tts_")
@@ -88,6 +95,7 @@ class EdgeTTSEngine:
                 voice=self.voice,
                 rate=self.rate,
                 volume=self.volume,
+                proxy=self.proxy,
             )
             await communicate.save(temp_file)
 
@@ -210,7 +218,7 @@ class EdgeTTSEngine:
 
         # 快速测试 edge-tts
         try:
-            voices = await edge_tts.list_voices()
+            voices = await edge_tts.list_voices(proxy=self.proxy)
             voice_names = [v["Name"] for v in voices]
             if self.voice in voice_names:
                 logger.info("TTS 语音 '%s' 可用", self.voice)

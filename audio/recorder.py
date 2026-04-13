@@ -2,7 +2,7 @@
 麦克风音频录制模块
 
 提供两种模式：
-- 帧模式 (frame mode): 为 Porcupine 唤醒词检测提供固定帧长的 int16 音频块
+- 帧模式 (frame mode): 为唤醒词检测引擎提供固定帧长的 int16 音频块
 - 流模式 (stream mode): 为 FunASR 提供持续的 PCM 音频流
 """
 

@@ -2,14 +2,43 @@
 # WakeUpOpenClaw 配置文件
 # =============================================================================
 
-# 唤醒词配置 (Picovoice Porcupine)
+# 唤醒词配置
 wake_up:
-  # Picovoice Access Key (免费注册获取: https://console.picovoice.ai/)
-  access_key: "YOUR_PICOVOICE_ACCESS_KEY"
-  # 自定义唤醒词模型路径 (.ppn 文件，需在 Picovoice Console 训练后下载 Linux ARM64 版本)
-  keyword_path: "./models/wakeword.ppn"
-  # 检测灵敏度 0.0 ~ 1.0，越高越灵敏但误触率也越高
-  sensitivity: 0.5
+  # 唤醒词引擎选择: "snowboy" 或 "porcupine"
+  engine: "snowboy"
+
+  # --- Snowboy 配置 (engine 为 "snowboy" 时使用) ---
+  # Snowboy 需要从源码编译，不能通过 pip 安装:
+  #   1. sudo apt install swig libatlas-base-dev sox
+  #   2. git clone https://github.com/seasalt-ai/snowboy.git
+  #   3. cd snowboy/swig/Python3 && make
+  #   4. 将 _snowboydetect.so, snowboydetect.py 复制到项目 snowboy/ 目录
+  #   5. 将 resources/ 目录也复制到 snowboy/ 下
+  snowboy:
+    # snowboydetect.so 所在目录 (也是 import 搜索路径)
+    snowboy_lib_path: "./snowboy"
+    # Snowboy common.res 资源文件路径 (必需)
+    resource_path: "./snowboy/resources/common.res"
+    # 唤醒词模型路径 (.umdl 通用模型 / .pmdl 个人模型)
+    # 内置可选: snowboy.umdl, alexa.umdl, jarvis.umdl, computer.umdl 等
+    model_path: "./snowboy/resources/models/snowboy.umdl"
+    # 检测灵敏度 0.0 ~ 1.0
+    sensitivity: 0.5
+    # 音频增益 (默认 1.0，环境嘈杂时可适当增大)
+    audio_gain: 1.0
+    # 是否启用前端音频处理 (降噪，部分模型推荐开启如 alexa.umdl)
+    apply_frontend: false
+
+  # --- Porcupine 配置 (engine 为 "porcupine" 时使用) ---
+  # 需要安装: pip install pvporcupine
+  # 需要注册获取 Access Key: https://console.picovoice.ai/
+  porcupine:
+    # Picovoice Access Key (免费注册获取)
+    access_key: "YOUR_PICOVOICE_ACCESS_KEY"
+    # 自定义唤醒词模型路径 (.ppn 文件，在 Picovoice Console 训练后下载 Linux ARM64 版本)
+    keyword_path: "./models/wakeword.ppn"
+    # 检测灵敏度 0.0 ~ 1.0
+    sensitivity: 0.5
 
 # FunASR 语音识别配置
 asr:
@@ -52,11 +81,11 @@ tts:
 
 # 音频配置
 audio:
-  # 采样率 (Hz)，FunASR 和 Porcupine 都使用 16000
+  # 采样率 (Hz)，FunASR / Porcupine / Snowboy 都使用 16000
   sample_rate: 16000
   # 声道数
   channels: 1
-  # 每次读取的帧数
+  # 每次读取的帧数 (会被唤醒词引擎的 frame_length 覆盖)
   chunk_size: 512
   # 音频格式
   format: "int16"

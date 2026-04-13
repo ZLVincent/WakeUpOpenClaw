@@ -32,7 +32,7 @@ from asr.funasr_client import FunASRClient
 from audio.recorder import AudioRecorder
 from tts.edge_tts_engine import EdgeTTSEngine
 from utils.logger import get_logger, setup_logging
-from wake_up.detector import WakeWordDetector
+from wake_up.factory import create_detector
 
 logger = get_logger("main")
 
@@ -170,13 +170,9 @@ class VoiceAssistant:
             input_device_index=audio_cfg.get("input_device_index"),
         )
 
-        # 唤醒词检测器
+        # 唤醒词检测器 (通过工厂函数根据 engine 配置创建)
         wake_cfg = config.get("wake_up", {})
-        self.detector = WakeWordDetector(
-            access_key=wake_cfg.get("access_key", ""),
-            keyword_path=wake_cfg.get("keyword_path", "./models/wakeword.ppn"),
-            sensitivity=wake_cfg.get("sensitivity", 0.5),
-        )
+        self.detector = create_detector(wake_cfg)
 
         # FunASR 客户端
         asr_cfg = config.get("asr", {})
@@ -259,7 +255,7 @@ class VoiceAssistant:
             logger.critical("唤醒词检测初始化失败: %s", e)
             return False
 
-        # 打开麦克风 (使用 Porcupine 要求的帧大小)
+        # 打开麦克风 (使用唤醒词引擎要求的帧大小)
         self.recorder.chunk_size = self.detector.frame_length
         self.recorder.open()
 
@@ -400,6 +396,9 @@ class VoiceAssistant:
 
     def shutdown(self) -> None:
         """优雅关闭。"""
+        if self._state == State.SHUTDOWN:
+            return  # 避免重复关闭
+
         logger.info("正在关闭助手...")
         self._running = False
         self._set_state(State.SHUTDOWN)

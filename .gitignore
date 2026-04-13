@@ -189,6 +189,11 @@ logs/*.log.*
 # Porcupine 唤醒词模型 (用户自行下载)
 models/*.ppn
 
+# Snowboy 编译产物和二进制 (用户自行编译)
+snowboy/_snowboydetect.so
+snowboy/snowboydetect.py
+snowboy/*.pyc
+
 # Secrets / credentials
 *.key
 

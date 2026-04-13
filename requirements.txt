@@ -1,5 +1,19 @@
-pvporcupine>=3.0.0
-pyaudio>=0.2.14
-websockets>=12.0
-edge-tts>=6.1.0
-pyyaml>=6.0
+# 核心依赖
+pyaudio>=0.2.14         # 音频采集
+websockets>=12.0        # WebSocket（FunASR 客户端）
+edge-tts>=6.1.0         # 微软 Edge TTS
+pyyaml>=6.0             # 配置文件解析
+
+# 唤醒词引擎 (根据 config.yaml 中 wake_up.engine 选择安装其中一个)
+#
+# -- Porcupine (engine: "porcupine") --
+#   pip install pvporcupine
+#   需要注册获取 Access Key: https://console.picovoice.ai/
+#
+# -- Snowboy (engine: "snowboy") --
+#   不能通过 pip 安装，需要从源码编译:
+#   1. sudo apt install swig libatlas-base-dev sox
+#   2. git clone https://github.com/seasalt-ai/snowboy.git
+#   3. cd snowboy/swig/Python3 && make
+#   4. 将编译产物复制到项目的 snowboy/ 目录
+#   详见 config.yaml 中的说明

@@ -217,6 +217,7 @@ class VoiceAssistant:
         self.sound_done = conv_cfg.get("sound_done", "./static/beep_lo.wav")
         self.vad_silence_timeout = conv_cfg.get("vad_silence_timeout", 1.5)
         self.vad_energy_threshold = conv_cfg.get("vad_energy_threshold", 500)
+        self.continue_wait_timeout = conv_cfg.get("continue_wait_timeout", 5.0)
 
     def _set_state(self, new_state: State) -> None:
         """切换状态并记录日志。"""
@@ -346,7 +347,7 @@ class VoiceAssistant:
         """
         多轮对话循环。
 
-        流程: LISTENING -> THINKING -> SPEAKING -> LISTENING -> ...
+        流程: LISTENING -> THINKING -> SPEAKING -> (等待用户继续) -> LISTENING -> ...
         超时或达到最大轮次时退出回到 IDLE。
         """
         self._conversation_round = 0
@@ -382,7 +383,13 @@ class VoiceAssistant:
             self._set_state(State.SPEAKING)
             await self.tts_engine.speak(reply)
 
-            # 播放提示音，提示用户可以继续说话
+            # ---- 等待用户是否继续说话 ----
+            # 短暂监听，如果检测到语音活动则继续多轮对话，否则退出
+            if not await self._wait_for_speech(self.continue_wait_timeout):
+                logger.info("用户无继续说话意图，退出对话")
+                break
+
+            # 用户有说话意图，播放提示音进入下一轮
             if self.prompt_sound:
                 await self._play_sound(self.sound_wake)
 
@@ -392,6 +399,42 @@ class VoiceAssistant:
             self._conversation_round,
         )
         self._set_state(State.IDLE)
+
+    async def _wait_for_speech(self, timeout: float = 5.0) -> bool:
+        """
+        短暂监听麦克风，判断用户是否有继续说话的意图。
+
+        在 AI 回复播完后调用。如果在 timeout 内检测到语音活动，
+        返回 True 表示用户想继续对话；否则返回 False 退出多轮对话。
+
+        Parameters
+        ----------
+        timeout : float
+            等待用户开口的最大时间（秒），默认 5 秒
+
+        Returns
+        -------
+        bool
+            True 表示检测到语音活动，用户想继续说话
+        """
+        logger.info("等待用户继续说话... (%.1fs 内无语音将退出对话)", timeout)
+        start = time.time()
+
+        while time.time() - start < timeout:
+            raw_data = await asyncio.get_running_loop().run_in_executor(
+                None, self.recorder.read_raw,
+            )
+            if not raw_data:
+                continue
+
+            samples = struct.unpack(f"{len(raw_data) // 2}h", raw_data)
+            energy = (sum(s * s for s in samples) / len(samples)) ** 0.5
+
+            if energy > self.vad_energy_threshold:
+                logger.info("检测到语音活动，继续多轮对话")
+                return True
+
+        return False
 
     async def _listen_and_recognize(self) -> str:
         """

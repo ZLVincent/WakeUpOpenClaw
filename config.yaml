@@ -127,6 +127,9 @@ conversation:
   # 需根据麦克风和环境噪音调整；安静环境 300~500，嘈杂环境 800~1500
   # 设为 0 表示完全依赖 FunASR 服务端 VAD
   vad_energy_threshold: 500
+  # AI 回复后等待用户继续说话的时间（秒）
+  # 在此时间内未检测到语音活动则退出多轮对话，回到唤醒词监听
+  continue_wait_timeout: 5.0
 
 # 日志配置
 logging:

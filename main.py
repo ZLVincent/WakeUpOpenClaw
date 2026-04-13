@@ -378,8 +378,11 @@ class VoiceAssistant:
             reply = await self.agent_client.send_message(recognized_text)
 
             if not reply:
-                logger.warning("OpenClaw 无回复")
-                reply = "抱歉，我没有得到有效的回复。"
+                logger.warning("OpenClaw 无回复或超时，退出对话")
+                # 播放低音提示用户本轮结束
+                if self.prompt_sound:
+                    await self._play_sound(self.sound_done)
+                break
 
             # ---- SPEAKING: TTS 合成并播放 ----
             self._set_state(State.SPEAKING)

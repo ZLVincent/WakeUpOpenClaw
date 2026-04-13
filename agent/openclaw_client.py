@@ -147,7 +147,7 @@ class OpenClawClient:
                 )
                 process.kill()
                 await process.wait()
-                return "抱歉，AI 处理超时了，请再试一次。"
+                return ""
 
             if process.returncode != 0:
                 stderr_text = stderr.decode("utf-8", errors="replace").strip()

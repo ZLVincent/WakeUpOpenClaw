@@ -6,6 +6,7 @@ edge-tts 语音合成引擎模块
 """
 
 import asyncio
+import glob
 import os
 import re
 import tempfile
@@ -184,16 +185,13 @@ class EdgeTTSEngine:
         if audio_file is None:
             return False
 
-        success = await self.play(audio_file)
-
-        # 播放完成后清理临时文件
         try:
-            os.remove(audio_file)
-            logger.debug("已清理临时文件: %s", audio_file)
-        except OSError as e:
-            logger.debug("清理临时文件失败: %s", e)
-
-        return success
+            return await self.play(audio_file)
+        finally:
+            # 无论播放成功与否，都清理临时文件
+            self._remove_file(audio_file)
+            # 顺便清理残留的旧临时文件
+            self._cleanup_stale_files()
 
     async def check_available(self) -> bool:
         """
@@ -248,6 +246,56 @@ class EdgeTTSEngine:
             logger.debug("已清理 TTS 临时目录: %s", self._temp_dir)
         except Exception as e:
             logger.debug("清理临时目录失败: %s", e)
+
+        # 清理上次异常退出可能残留的临时目录
+        self._cleanup_orphaned_dirs()
+
+    @staticmethod
+    def _remove_file(filepath: str) -> None:
+        """安全删除单个文件。"""
+        try:
+            if os.path.exists(filepath):
+                os.remove(filepath)
+                logger.debug("已清理临时文件: %s", filepath)
+        except OSError as e:
+            logger.debug("清理临时文件失败: %s", e)
+
+    def _cleanup_stale_files(self, max_age_seconds: int = 300) -> None:
+        """
+        清理临时目录中超过 max_age_seconds 秒的旧文件。
+
+        每次 speak() 调用后自动触发，避免因异常导致的文件堆积。
+        """
+        try:
+            now = time.time()
+            for filepath in glob.glob(os.path.join(self._temp_dir, "tts_*.mp3")):
+                try:
+                    file_age = now - os.path.getmtime(filepath)
+                    if file_age > max_age_seconds:
+                        os.remove(filepath)
+                        logger.debug("已清理过期临时文件 (%.0fs): %s", file_age, filepath)
+                except OSError:
+                    pass
+        except Exception as e:
+            logger.debug("清理过期文件时出错: %s", e)
+
+    @staticmethod
+    def _cleanup_orphaned_dirs() -> None:
+        """清理上次异常退出可能残留在 /tmp 中的 wakeup_tts_* 目录。"""
+        import shutil
+        try:
+            tmp_dir = tempfile.gettempdir()
+            for name in os.listdir(tmp_dir):
+                if name.startswith("wakeup_tts_"):
+                    dirpath = os.path.join(tmp_dir, name)
+                    if os.path.isdir(dirpath):
+                        # 只清理超过 1 小时的目录，避免误删其他实例的
+                        dir_age = time.time() - os.path.getmtime(dirpath)
+                        if dir_age > 3600:
+                            shutil.rmtree(dirpath, ignore_errors=True)
+                            logger.info("已清理残留 TTS 临时目录: %s", dirpath)
+        except Exception as e:
+            logger.debug("清理残留临时目录时出错: %s", e)
 
     @staticmethod
     def _clean_for_speech(text: str) -> str:

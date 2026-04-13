@@ -109,6 +109,9 @@ class OpenClawClient:
 
         命令格式:
             openclaw agent --message "..." --session-id <id> --thinking <level> --json
+
+        使用实时逐行读取 stdout，一旦检测到完整 JSON 响应立即返回，
+        不等待进程退出（OpenClaw 进程退出前可能有十几秒的清理时间）。
         """
         # 拼接系统提示词
         full_message = message
@@ -135,11 +138,15 @@ class OpenClawClient:
                 stderr=asyncio.subprocess.PIPE,
             )
 
+            # 实时逐行读取 stdout，检测到 JSON 就立即返回
+            stdout_lines = []
             try:
-                stdout, stderr = await asyncio.wait_for(
-                    process.communicate(),
+                result = await asyncio.wait_for(
+                    self._read_until_json(process, stdout_lines),
                     timeout=self.timeout,
                 )
+                if result:
+                    return result
             except asyncio.TimeoutError:
                 logger.error(
                     "OpenClaw CLI 调用超时 (%ds)，正在终止进程...",
@@ -149,28 +156,22 @@ class OpenClawClient:
                 await process.wait()
                 return ""
 
-            if process.returncode != 0:
-                stderr_text = stderr.decode("utf-8", errors="replace").strip()
+            # 没有从流式读取中提取到 JSON，尝试用已收集的行解析
+            stdout_text = "\n".join(stdout_lines).strip()
+            logger.debug("OpenClaw stdout 完整输出 (%d字符): %s", len(stdout_text), stdout_text[:500])
+
+            if process.returncode is not None and process.returncode != 0:
+                stderr_data = await process.stderr.read() if process.stderr else b""
+                stderr_text = stderr_data.decode("utf-8", errors="replace").strip()
                 logger.error(
                     "OpenClaw CLI 返回错误 (code=%d): %s",
                     process.returncode, stderr_text,
                 )
-                return "抱歉，AI 处理出错了，请稍后再试。"
-
-            # 记录 stderr 中的信息（如 Gateway fallback 等）
-            stderr_text = stderr.decode("utf-8", errors="replace").strip()
-            if stderr_text:
-                logger.info("OpenClaw stderr: %s", stderr_text[:500])
-
-            stdout_text = stdout.decode("utf-8", errors="replace").strip()
-            logger.debug("OpenClaw stdout 原始输出 (%d字符): %s", len(stdout_text), stdout_text[:1000])
-
-            if not stdout_text:
-                logger.warning("OpenClaw CLI 返回空输出")
                 return ""
 
-            # 尝试解析 JSON 输出
-            return self._parse_cli_output(stdout_text)
+            if stdout_text:
+                return self._parse_cli_output(stdout_text)
+            return ""
 
         except FileNotFoundError:
             logger.critical(
@@ -180,7 +181,79 @@ class OpenClawClient:
             return "错误: 找不到 openclaw 命令，请确认安装。"
         except Exception as e:
             logger.error("OpenClaw CLI 调用异常: %s", e, exc_info=True)
-            return "抱歉，调用 AI 助手时出错了。"
+            return ""
+
+    async def _read_until_json(
+        self,
+        process: asyncio.subprocess.Process,
+        stdout_lines: list,
+    ) -> str:
+        """
+        实时逐行读取进程 stdout，一旦检测到完整 JSON 响应立即解析返回。
+
+        OpenClaw --json 输出的 JSON 以 '{' 开头，可能跨多行（pretty-printed）。
+        当检测到 JSON 开始后，持续收集行直到 JSON 完整（可被 json.loads 解析）。
+        """
+        json_buffer = ""
+        in_json = False
+        brace_depth = 0
+
+        while True:
+            line = await process.stdout.readline()
+            if not line:
+                # EOF，进程 stdout 关闭
+                break
+
+            decoded = line.decode("utf-8", errors="replace").rstrip("\n").rstrip("\r")
+            stdout_lines.append(decoded)
+
+            if not in_json:
+                stripped = decoded.strip()
+                if stripped.startswith("{"):
+                    in_json = True
+                    json_buffer = ""
+                else:
+                    # 非 JSON 行（日志等），跳过
+                    continue
+
+            if in_json:
+                json_buffer += decoded + "\n"
+                # 简单的花括号深度计数（忽略字符串内的括号，但对于
+                # OpenClaw 的 JSON 输出足够可靠）
+                for ch in decoded:
+                    if ch == "{":
+                        brace_depth += 1
+                    elif ch == "}":
+                        brace_depth -= 1
+
+                if brace_depth <= 0:
+                    # JSON 对象应该已完整，尝试解析
+                    json_buffer = json_buffer.strip()
+                    try:
+                        json.loads(json_buffer)
+                        logger.debug(
+                            "实时捕获到完整 JSON (%d字符)",
+                            len(json_buffer),
+                        )
+                        result = self._parse_cli_output(json_buffer)
+                        # 不等进程退出，后台让它自行结束
+                        asyncio.create_task(self._cleanup_process(process))
+                        return result
+                    except json.JSONDecodeError:
+                        # 花括号计数不准，继续收集
+                        brace_depth = 0
+                        continue
+
+        return ""
+
+    @staticmethod
+    async def _cleanup_process(process: asyncio.subprocess.Process) -> None:
+        """后台等待进程退出，避免僵尸进程。"""
+        try:
+            await asyncio.wait_for(process.wait(), timeout=30)
+        except asyncio.TimeoutError:
+            process.kill()
+            await process.wait()
 
     # OpenClaw 输出中可能混入的非回复内容关键词
     _NOISE_PATTERNS = (

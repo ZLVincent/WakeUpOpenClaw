@@ -69,7 +69,10 @@ agent:
   # 思考级别: off / minimal / low / medium / high / xhigh
   thinking: "medium"
   # 单次调用超时（秒）
-  timeout: 60
+  timeout: 120
+  # 是否使用 --local 跳过 Gateway 直接本地执行
+  # Gateway 已启动时建议设为 false；如果 Gateway 不稳定或不需要，设为 true
+  local: false
   # WebSocket Gateway 地址（当 method 为 websocket 时使用）
   gateway_url: "ws://127.0.0.1:18789"
 
@@ -113,6 +116,13 @@ conversation:
   sound_done: "./static/beep_lo.wav"
   # 唤醒提示语 (仅当 sound_wake 文件不存在时回退使用 TTS 朗读)
   prompt_text: "我在"
+  # VAD 端点检测: 静默持续多久判定说话结束（秒）
+  # 建议 1.0~2.0，太短会截断语句，太长等待感明显
+  vad_silence_timeout: 1.5
+  # VAD 端点检测: 能量阈值，低于此值视为静默
+  # 需根据麦克风和环境噪音调整；安静环境 300~500，嘈杂环境 800~1500
+  # 设为 0 表示完全依赖 FunASR 服务端 VAD
+  vad_energy_threshold: 500
 
 # 日志配置
 logging:

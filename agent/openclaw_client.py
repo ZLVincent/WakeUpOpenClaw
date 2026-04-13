@@ -35,6 +35,8 @@ class OpenClawClient:
         思考级别
     timeout : int
         单次调用超时（秒）
+    local : bool
+        是否使用 --local 跳过 Gateway 直接本地执行
     gateway_url : str
         Gateway WebSocket 地址（websocket 模式时使用）
     """
@@ -45,7 +47,8 @@ class OpenClawClient:
         cli_path: str = "openclaw",
         session_id: str = "voice-assistant",
         thinking: str = "medium",
-        timeout: int = 60,
+        timeout: int = 120,
+        local: bool = False,
         gateway_url: str = "ws://127.0.0.1:18789",
     ):
         self.method = method
@@ -53,6 +56,7 @@ class OpenClawClient:
         self.session_id = session_id
         self.thinking = thinking
         self.timeout = timeout
+        self.local = local
         self.gateway_url = gateway_url
 
     async def send_message(self, message: str) -> str:
@@ -110,6 +114,8 @@ class OpenClawClient:
             "--thinking", self.thinking,
             "--json",
         ]
+        if self.local:
+            cmd.append("--local")
 
         logger.debug("执行命令: %s", " ".join(cmd))
 
@@ -165,24 +171,46 @@ class OpenClawClient:
         """
         解析 openclaw agent --json 的输出。
 
-        JSON 输出结构通常包含:
+        OpenClaw --json 输出结构:
         {
-            "summary": "...",      // 摘要回复
-            "text": "...",         // 完整回复文本
-            "status": "completed", // 状态
-            ...
+            "payloads": [{"text": "...", "mediaUrl": null}],
+            "meta": {
+                "durationMs": 1234,
+                "agentMeta": {...},
+                "stopReason": "completed" | "error",
+            }
         }
         """
         try:
             data = json.loads(output)
-            # 优先取 text，其次 summary
+
+            # 检查是否有错误
+            meta = data.get("meta", {})
+            stop_reason = meta.get("stopReason", "")
+            if stop_reason == "error":
+                agent_meta = meta.get("agentMeta", {})
+                error_msg = agent_meta.get("error", "")
+                if error_msg:
+                    logger.error("OpenClaw 返回错误: %s", error_msg)
+                    return f"AI 处理出错: {error_msg}"
+
+            # 从 payloads 数组提取文本
+            payloads = data.get("payloads", [])
+            if payloads:
+                texts = [p.get("text", "") for p in payloads if p.get("text")]
+                if texts:
+                    return "\n".join(texts)
+
+            # 兼容其他格式: 直接取 text / summary
             text = data.get("text", "") or data.get("summary", "")
             if text:
                 return text
-            # 如果都没有，尝试取 payload
+
+            # 尝试取 payload (单数)
             payload = data.get("payload", {})
             if isinstance(payload, dict):
                 return payload.get("text", "") or payload.get("summary", "")
+
             logger.debug("JSON 输出结构: %s", list(data.keys()))
             return output  # fallback: 返回原始输出
         except json.JSONDecodeError:

@@ -191,7 +191,8 @@ class VoiceAssistant:
             cli_path=agent_cfg.get("cli_path", "openclaw"),
             session_id=agent_cfg.get("session_id", "voice-assistant"),
             thinking=agent_cfg.get("thinking", "medium"),
-            timeout=agent_cfg.get("timeout", 60),
+            timeout=agent_cfg.get("timeout", 120),
+            local=agent_cfg.get("local", False),
             gateway_url=agent_cfg.get("gateway_url", "ws://127.0.0.1:18789"),
         )
 
@@ -213,6 +214,8 @@ class VoiceAssistant:
         self.prompt_text = conv_cfg.get("prompt_text", "我在")
         self.sound_wake = conv_cfg.get("sound_wake", "./static/beep_hi.wav")
         self.sound_done = conv_cfg.get("sound_done", "./static/beep_lo.wav")
+        self.vad_silence_timeout = conv_cfg.get("vad_silence_timeout", 1.5)
+        self.vad_energy_threshold = conv_cfg.get("vad_energy_threshold", 500)
 
     def _set_state(self, new_state: State) -> None:
         """切换状态并记录日志。"""
@@ -400,14 +403,11 @@ class VoiceAssistant:
         """
         logger.info("开始录音，请说话...")
 
-        # 创建音频流生成器
-        # 对话中的静默检测使用较短的超时 (说话间隔)
-        # 第一轮使用全局超时，后续轮使用较短的说话间隔超时
-        vad_timeout = 2.0 if self._conversation_round > 1 else 3.0
+        # 创建音频流生成器，使用配置中的 VAD 参数
         audio_stream = AudioStreamGenerator(
             recorder=self.recorder,
-            silence_timeout=vad_timeout,
-            energy_threshold=300,
+            silence_timeout=self.vad_silence_timeout,
+            energy_threshold=self.vad_energy_threshold,
         )
 
         # 使用带总超时的包装器

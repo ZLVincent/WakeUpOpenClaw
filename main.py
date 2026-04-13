@@ -194,6 +194,7 @@ class VoiceAssistant:
             timeout=agent_cfg.get("timeout", 120),
             local=agent_cfg.get("local", False),
             gateway_url=agent_cfg.get("gateway_url", "ws://127.0.0.1:18789"),
+            system_prompt=agent_cfg.get("system_prompt", ""),
         )
 
         # TTS 引擎

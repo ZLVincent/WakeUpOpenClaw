@@ -7,6 +7,7 @@ edge-tts 语音合成引擎模块
 
 import asyncio
 import os
+import re
 import tempfile
 import time
 from typing import Optional
@@ -78,6 +79,9 @@ class EdgeTTSEngine:
         if not text or not text.strip():
             logger.warning("合成文本为空，跳过")
             return None
+
+        # 清理 Markdown 和特殊符号，使文本适合语音朗读
+        text = self._clean_for_speech(text)
 
         start_time = time.time()
         text_preview = text[:50] + "..." if len(text) > 50 else text
@@ -244,3 +248,42 @@ class EdgeTTSEngine:
             logger.debug("已清理 TTS 临时目录: %s", self._temp_dir)
         except Exception as e:
             logger.debug("清理临时目录失败: %s", e)
+
+    @staticmethod
+    def _clean_for_speech(text: str) -> str:
+        """
+        清理文本中不适合语音朗读的符号和格式。
+
+        去除 Markdown 格式符号、emoji、多余空白等，
+        使文本更适合 TTS 语音合成。
+        """
+        # 去除 Markdown 加粗/斜体: **text** -> text, *text* -> text
+        text = re.sub(r"\*{1,3}(.+?)\*{1,3}", r"\1", text)
+        # 去除 Markdown 删除线: ~~text~~ -> text
+        text = re.sub(r"~~(.+?)~~", r"\1", text)
+        # 去除 Markdown 行内代码: `code` -> code
+        text = re.sub(r"`(.+?)`", r"\1", text)
+        # 去除 Markdown 标题符号: ### title -> title
+        text = re.sub(r"^#{1,6}\s*", "", text, flags=re.MULTILINE)
+        # 去除 Markdown 列表符号: - item / * item -> item
+        text = re.sub(r"^\s*[-*+]\s+", "", text, flags=re.MULTILINE)
+        # 去除有序列表数字: 1. item -> item
+        text = re.sub(r"^\s*\d+\.\s+", "", text, flags=re.MULTILINE)
+        # 去除 Markdown 链接: [text](url) -> text
+        text = re.sub(r"\[([^\]]+)\]\([^)]+\)", r"\1", text)
+        # 去除 Markdown 图片: ![alt](url) -> alt
+        text = re.sub(r"!\[([^\]]*)\]\([^)]+\)", r"\1", text)
+        # 去除 HTML 标签: <br> <br/> 等
+        text = re.sub(r"<[^>]+>", "", text)
+        # 去除 emoji (Unicode emoji 范围)
+        text = re.sub(
+            r"[\U0001F300-\U0001F9FF\U00002702-\U000027B0"
+            r"\U0000FE00-\U0000FE0F\U0000200D]+",
+            "", text,
+        )
+        # 合并多个空行为一个
+        text = re.sub(r"\n{3,}", "\n\n", text)
+        # 去除行首尾多余空白
+        text = "\n".join(line.strip() for line in text.split("\n"))
+
+        return text.strip()

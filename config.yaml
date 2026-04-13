@@ -75,6 +75,15 @@ agent:
   local: false
   # WebSocket Gateway 地址（当 method 为 websocket 时使用）
   gateway_url: "ws://127.0.0.1:18789"
+  # 发送给 Agent 的系统提示词前缀（会拼接在用户消息前面）
+  # 用于约束 Agent 的回复格式，使其适合语音播报
+  system_prompt: >-
+    你是一个语音助手，用户通过语音与你交流，你的回复将被 TTS 语音合成后播放给用户。
+    请遵守以下规则：
+    1. 用纯文本回复，不要使用 Markdown 格式（不要用 **加粗**、*斜体*、# 标题、- 列表等符号）
+    2. 回复简洁，适合语音朗读，不要过长
+    3. 不要使用 emoji 表情符号
+    4. 用口语化的自然语言回复
 
 # TTS 语音合成配置 (edge-tts)
 tts:

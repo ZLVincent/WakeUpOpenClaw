@@ -39,6 +39,8 @@ class OpenClawClient:
         是否使用 --local 跳过 Gateway 直接本地执行
     gateway_url : str
         Gateway WebSocket 地址（websocket 模式时使用）
+    system_prompt : str
+        系统提示词，拼接在用户消息前面发送给 Agent
     """
 
     def __init__(
@@ -50,6 +52,7 @@ class OpenClawClient:
         timeout: int = 120,
         local: bool = False,
         gateway_url: str = "ws://127.0.0.1:18789",
+        system_prompt: str = "",
     ):
         self.method = method
         self.cli_path = cli_path
@@ -58,6 +61,7 @@ class OpenClawClient:
         self.timeout = timeout
         self.local = local
         self.gateway_url = gateway_url
+        self.system_prompt = system_prompt.strip()
 
     async def send_message(self, message: str) -> str:
         """
@@ -106,10 +110,15 @@ class OpenClawClient:
         命令格式:
             openclaw agent --message "..." --session-id <id> --thinking <level> --json
         """
+        # 拼接系统提示词
+        full_message = message
+        if self.system_prompt:
+            full_message = f"[系统指令] {self.system_prompt}\n\n[用户问题] {message}"
+
         cmd = [
             self.cli_path,
             "agent",
-            "--message", message,
+            "--message", full_message,
             "--session-id", self.session_id,
             "--thinking", self.thinking,
             "--json",

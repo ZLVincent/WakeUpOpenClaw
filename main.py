@@ -209,6 +209,7 @@ class VoiceAssistant:
 
         # 对话配置
         conv_cfg = config.get("conversation", {})
+        self.conversation_mode = conv_cfg.get("mode", "multi")  # "single" or "multi"
         self.silence_timeout = conv_cfg.get("silence_timeout", 15)
         self.max_rounds = conv_cfg.get("max_rounds", 20)
         self.prompt_sound = conv_cfg.get("prompt_sound", True)
@@ -383,8 +384,12 @@ class VoiceAssistant:
             self._set_state(State.SPEAKING)
             await self.tts_engine.speak(reply)
 
-            # ---- 等待用户是否继续说话 ----
-            # 短暂监听，如果检测到语音活动则继续多轮对话，否则退出
+            # 单轮模式：AI 回复后直接退出
+            if self.conversation_mode == "single":
+                logger.info("单轮对话模式，回复完毕，退出对话")
+                break
+
+            # 多轮模式：等待用户是否继续说话
             if not await self._wait_for_speech(self.continue_wait_timeout):
                 logger.info("用户无继续说话意图，退出对话")
                 break

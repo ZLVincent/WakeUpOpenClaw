@@ -108,6 +108,10 @@ audio:
 
 # 多轮对话配置
 conversation:
+  # 对话模式: "single"（单轮）或 "multi"（多轮）
+  # single: 唤醒 -> 说话 -> AI回复 -> 回到唤醒词监听
+  # multi:  唤醒 -> 说话 -> AI回复 -> 等待用户继续 -> ... -> 超时后回到唤醒词监听
+  mode: "multi"
   # 静默超时（秒），无语音输入超过此时间则退出多轮对话
   silence_timeout: 15
   # 最大对话轮次

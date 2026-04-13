@@ -210,12 +210,31 @@ class VoiceAssistant:
         self.max_rounds = conv_cfg.get("max_rounds", 20)
         self.prompt_sound = conv_cfg.get("prompt_sound", True)
         self.prompt_text = conv_cfg.get("prompt_text", "我在")
+        self.sound_wake = conv_cfg.get("sound_wake", "./static/beep_hi.wav")
+        self.sound_done = conv_cfg.get("sound_done", "./static/beep_lo.wav")
 
     def _set_state(self, new_state: State) -> None:
         """切换状态并记录日志。"""
         old_state = self._state
         self._state = new_state
         logger.info("状态切换: %s -> %s", old_state.value, new_state.value)
+
+    async def _play_sound(self, sound_path: str) -> None:
+        """
+        播放提示音文件。
+
+        Parameters
+        ----------
+        sound_path : str
+            音频文件路径 (.wav / .mp3 等)
+        """
+        if not sound_path:
+            return
+        if not os.path.exists(sound_path):
+            logger.debug("提示音文件不存在: %s", sound_path)
+            return
+        logger.debug("播放提示音: %s", sound_path)
+        await self.tts_engine.play(sound_path)
 
     async def initialize(self) -> bool:
         """
@@ -297,10 +316,14 @@ class VoiceAssistant:
         )
 
         if detected and self._running:
-            # 播放提示音
+            # 播放唤醒提示音
             if self.prompt_sound:
-                self._set_state(State.SPEAKING)
-                await self.tts_engine.speak(self.prompt_text)
+                if self.sound_wake and os.path.exists(self.sound_wake):
+                    await self._play_sound(self.sound_wake)
+                else:
+                    # 回退: 用 TTS 朗读提示语
+                    self._set_state(State.SPEAKING)
+                    await self.tts_engine.speak(self.prompt_text)
 
             # 进入多轮对话
             await self._conversation_loop()
@@ -338,6 +361,10 @@ class VoiceAssistant:
                 logger.info("未识别到有效语音内容，退出对话")
                 break
 
+            # 播放录音结束提示音
+            if self.prompt_sound:
+                await self._play_sound(self.sound_done)
+
             # ---- THINKING: 调用 OpenClaw ----
             self._set_state(State.THINKING)
             reply = await self.agent_client.send_message(recognized_text)
@@ -349,6 +376,10 @@ class VoiceAssistant:
             # ---- SPEAKING: TTS 合成并播放 ----
             self._set_state(State.SPEAKING)
             await self.tts_engine.speak(reply)
+
+            # 播放提示音，提示用户可以继续说话
+            if self.prompt_sound:
+                await self._play_sound(self.sound_wake)
 
         # 对话结束
         logger.info(

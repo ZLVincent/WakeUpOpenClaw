@@ -98,9 +98,13 @@ conversation:
   silence_timeout: 15
   # 最大对话轮次
   max_rounds: 20
-  # 是否播放唤醒提示音
+  # 是否播放提示音
   prompt_sound: true
-  # 唤醒提示语（TTS 朗读）
+  # 唤醒提示音 (检测到唤醒词后播放，提示用户可以开始说话)
+  sound_wake: "./static/beep_hi.wav"
+  # 录音结束提示音 (语音输入结束后播放，提示正在处理)
+  sound_done: "./static/beep_lo.wav"
+  # 唤醒提示语 (仅当 sound_wake 文件不存在时回退使用 TTS 朗读)
   prompt_text: "我在"
 
 # 日志配置

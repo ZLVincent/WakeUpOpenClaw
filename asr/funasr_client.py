@@ -152,14 +152,18 @@ class FunASRClient:
                                     on_partial(text)
 
                             elif mode == "2pass-offline" and text:
-                                # 离线识别最终结果
+                                # 2pass 离线纠错最终结果
                                 result_holder["final"] = text
                                 logger.info("FunASR 最终结果: %s", text)
+                                receive_done.set()
+                                return
 
                             elif mode == "offline" and text:
-                                # 纯离线模式结果
+                                # 纯离线模式结果 — 收到即完成
                                 result_holder["final"] = text
                                 logger.info("FunASR 离线结果: %s", text)
+                                receive_done.set()
+                                return
 
                             elif mode == "online" and text:
                                 # 纯在线模式，持续更新

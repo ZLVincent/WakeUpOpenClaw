@@ -148,6 +148,11 @@ class OpenClawClient:
                 )
                 return "抱歉，AI 处理出错了，请稍后再试。"
 
+            # 记录 stderr 中的信息（如 Gateway fallback 等）
+            stderr_text = stderr.decode("utf-8", errors="replace").strip()
+            if stderr_text:
+                logger.debug("OpenClaw stderr: %s", stderr_text[:500])
+
             stdout_text = stdout.decode("utf-8", errors="replace").strip()
 
             if not stdout_text:
@@ -171,6 +176,9 @@ class OpenClawClient:
         """
         解析 openclaw agent --json 的输出。
 
+        注意: stdout 中可能混有非 JSON 的日志行（如 Gateway fallback 信息），
+        JSON 通常在最后一行。需要先提取有效的 JSON 部分再解析。
+
         OpenClaw --json 输出结构:
         {
             "payloads": [{"text": "...", "mediaUrl": null}],
@@ -181,13 +189,31 @@ class OpenClawClient:
             }
         }
         """
+        # 尝试从 output 中提取 JSON 部分
+        # stdout 可能是:
+        #   Gateway agent failed; falling back to embedded: ...
+        #   [agent] embedded run ...
+        #   {"payloads":[...],"meta":{...}}
+        json_str = self._extract_json(output)
+        if not json_str:
+            logger.debug("未找到 JSON 输出，直接使用原始文本")
+            return output.strip()
+
         try:
-            data = json.loads(output)
+            data = json.loads(json_str)
 
             # 检查是否有错误
             meta = data.get("meta", {})
             stop_reason = meta.get("stopReason", "")
             if stop_reason == "error":
+                # 优先从 payloads 取错误文本
+                payloads = data.get("payloads", [])
+                if payloads:
+                    err_text = payloads[0].get("text", "")
+                    if err_text:
+                        logger.error("OpenClaw 返回错误: %s", err_text)
+                        return f"AI 处理出错: {err_text}"
+                # 其次从 agentMeta 取
                 agent_meta = meta.get("agentMeta", {})
                 error_msg = agent_meta.get("error", "")
                 if error_msg:
@@ -206,17 +232,37 @@ class OpenClawClient:
             if text:
                 return text
 
-            # 尝试取 payload (单数)
-            payload = data.get("payload", {})
-            if isinstance(payload, dict):
-                return payload.get("text", "") or payload.get("summary", "")
-
-            logger.debug("JSON 输出结构: %s", list(data.keys()))
-            return output  # fallback: 返回原始输出
+            logger.warning("OpenClaw JSON 中未找到有效文本，keys: %s", list(data.keys()))
+            return "抱歉，AI 返回了空内容。"
         except json.JSONDecodeError:
-            # 非 JSON 输出，直接返回文本
-            logger.debug("非 JSON 输出，直接使用原始文本")
-            return output
+            logger.warning("提取的 JSON 解析失败: %s", json_str[:200])
+            return output.strip()
+
+    @staticmethod
+    def _extract_json(text: str) -> str:
+        """
+        从可能混有非 JSON 行的文本中提取最后一个完整的 JSON 对象。
+
+        从后往前扫描，找到以 '{' 开头的行，尝试解析。
+        """
+        # 先尝试整体解析
+        text = text.strip()
+        if text.startswith("{"):
+            return text
+
+        # 从后往前逐行查找 JSON 起始
+        lines = text.split("\n")
+        for i in range(len(lines) - 1, -1, -1):
+            line = lines[i].strip()
+            if line.startswith("{"):
+                candidate = "\n".join(lines[i:]).strip()
+                try:
+                    json.loads(candidate)
+                    return candidate
+                except json.JSONDecodeError:
+                    continue
+
+        return ""
 
     async def _send_via_websocket(self, message: str) -> str:
         """

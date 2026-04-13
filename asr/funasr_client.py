@@ -33,9 +33,8 @@ class FunASRClient:
     ----------
     server_url : str
         FunASR 服务的 WebSocket 地址。
-        - 离线模式 (offline): 默认 ws://localhost:10095
-        - 实时模式 (online/2pass): 默认 wss://localhost:10096 (SSL)
-        如果 FunASR 关闭了 SSL，则使用 ws://localhost:10096
+        - 离线服务 (offline): ws://localhost:10095 (无 SSL)
+        - 实时服务 (online/2pass): wss://localhost:10096 (有 SSL)
     mode : str
         识别模式: "offline" / "online" / "2pass"
     hotwords : str
@@ -43,17 +42,16 @@ class FunASRClient:
     use_itn : bool
         是否使用逆文本归一化
     ssl_enabled : bool
-        是否启用 SSL。FunASR 实时服务默认开启 SSL，
-        如果已关闭 SSL (--ssl 0) 则设为 False
+        是否启用 SSL。离线服务默认关闭，实时服务默认开启。
     """
 
     def __init__(
         self,
-        server_url: str = "wss://localhost:10096",
-        mode: str = "2pass",
+        server_url: str = "ws://localhost:10095",
+        mode: str = "offline",
         hotwords: str = "",
         use_itn: bool = True,
-        ssl_enabled: bool = True,
+        ssl_enabled: bool = False,
     ):
         self.server_url = server_url
         self.mode = mode

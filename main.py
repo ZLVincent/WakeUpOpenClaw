@@ -177,11 +177,11 @@ class VoiceAssistant:
         # FunASR 客户端
         asr_cfg = config.get("asr", {})
         self.asr_client = FunASRClient(
-            server_url=asr_cfg.get("server_url", "wss://localhost:10096"),
-            mode=asr_cfg.get("mode", "2pass"),
+            server_url=asr_cfg.get("server_url", "ws://localhost:10095"),
+            mode=asr_cfg.get("mode", "offline"),
             hotwords=asr_cfg.get("hotwords", ""),
             use_itn=asr_cfg.get("use_itn", True),
-            ssl_enabled=asr_cfg.get("ssl_enabled", True),
+            ssl_enabled=asr_cfg.get("ssl_enabled", False),
         )
 
         # OpenClaw Agent 客户端

@@ -209,7 +209,7 @@ class VoiceAssistant:
 
         # 对话配置
         conv_cfg = config.get("conversation", {})
-        self.conversation_mode = conv_cfg.get("mode", "multi")  # "single" or "multi"
+        self.conversation_mode = conv_cfg.get("mode", "single")  # "single" or "multi"
         self.silence_timeout = conv_cfg.get("silence_timeout", 15)
         self.max_rounds = conv_cfg.get("max_rounds", 20)
         self.prompt_sound = conv_cfg.get("prompt_sound", True)

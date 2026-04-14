@@ -34,7 +34,7 @@ wake_up:
   # 需要注册获取 Access Key: https://console.picovoice.ai/
   porcupine:
     # Picovoice Access Key (免费注册获取)
-    access_key: "YOUR_PICOVOICE_ACCESS_KEY"
+    access_key: "${PICOVOICE_ACCESS_KEY}"
     # 自定义唤醒词模型路径 (.ppn 文件，在 Picovoice Console 训练后下载 Linux ARM64 版本)
     keyword_path: "./models/wakeword.ppn"
     # 检测灵敏度 0.0 ~ 1.0

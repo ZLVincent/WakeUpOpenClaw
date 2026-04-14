@@ -399,25 +399,35 @@ class WebServer:
 
         logger.info("OTA 更新: git pull 完成: %s", pull_output.strip()[:200])
 
-        # 重启服务
-        restart_output = await self._run_cmd(
-            "supervisorctl", "restart", "WakeUpOpenClaw",
+        # 先返回响应，延迟 1 秒后在后台执行重启
+        # 避免 supervisorctl restart 杀掉当前进程导致响应无法返回
+        asyncio.get_event_loop().call_later(
+            1.0,
+            lambda: asyncio.ensure_future(
+                self._run_cmd("supervisorctl", "restart", "WakeUpOpenClaw")
+            ),
         )
-        logger.info("OTA 更新: 重启命令已发送: %s", (restart_output or "").strip()[:200])
+        logger.info("OTA 更新: 重启命令将在 1 秒后执行")
 
         return web.json_response({
             "status": "ok",
             "pull": pull_output.strip()[:500],
-            "restart": (restart_output or "").strip()[:200],
+            "message": "更新已拉取，服务即将重启",
         })
 
     async def _handle_restart(self, request: web.Request) -> web.Response:
         """仅重启服务（不拉取更新）。"""
-        output = await self._run_cmd("supervisorctl", "restart", "WakeUpOpenClaw")
-        logger.info("手动重启命令已发送: %s", (output or "").strip()[:200])
+        # 先返回响应，延迟 1 秒后在后台执行重启
+        asyncio.get_event_loop().call_later(
+            1.0,
+            lambda: asyncio.ensure_future(
+                self._run_cmd("supervisorctl", "restart", "WakeUpOpenClaw")
+            ),
+        )
+        logger.info("手动重启命令将在 1 秒后执行")
         return web.json_response({
             "status": "ok",
-            "output": (output or "").strip()[:200],
+            "message": "重启命令已调度，服务即将重启",
         })
 
     # ------------------------------------------------------------------

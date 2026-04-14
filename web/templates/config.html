@@ -470,9 +470,13 @@ async function applyUpdate() {
   try {
     const res = await fetch('/api/system/update/apply', {method: 'POST'});
     const data = await res.json();
-    if (data.error) { showToast(data.error, 'error'); }
-    else { showToast('更新完成，服务正在重启...', 'success'); }
-  } catch(e) { showToast('更新失败: ' + e.message, 'error'); }
+    if (data.error) { showToast(data.error, 'error'); btn.disabled = false; btn.textContent = '拉取更新并重启'; return; }
+    showToast('更新已拉取，服务正在重启...', 'success');
+    await waitForRestart();
+  } catch(e) {
+    showToast('请求失败，服务可能正在重启...', 'success');
+    await waitForRestart();
+  }
   btn.disabled = false; btn.textContent = '拉取更新并重启';
 }
 
@@ -480,9 +484,34 @@ async function restartService() {
   if (!confirm('确定要重启服务吗？')) return;
   try {
     await fetch('/api/system/restart', {method: 'POST'});
-    showToast('重启命令已发送，页面将在几秒后刷新...', 'success');
-    setTimeout(() => location.reload(), 5000);
-  } catch(e) { showToast('重启失败: ' + e.message, 'error'); }
+    showToast('重启命令已发送，等待服务就绪...', 'success');
+  } catch(e) {
+    showToast('服务正在重启...', 'success');
+  }
+  await waitForRestart();
+}
+
+async function waitForRestart() {
+  // 先等 2 秒让旧进程退出
+  await new Promise(r => setTimeout(r, 2000));
+  // 轮询直到新服务就绪（最多 30 秒）
+  for (let i = 0; i < 15; i++) {
+    try {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 2000);
+      const res = await fetch('/api/system/version', {signal: controller.signal});
+      clearTimeout(timeout);
+      if (res.ok) {
+        showToast('服务已就绪，正在刷新...', 'success');
+        setTimeout(() => location.reload(), 500);
+        return;
+      }
+    } catch(e) {
+      // 服务还没起来，继续等
+    }
+    await new Promise(r => setTimeout(r, 2000));
+  }
+  showToast('服务可能未能启动，请手动检查', 'error');
 }
 
 loadVersion();

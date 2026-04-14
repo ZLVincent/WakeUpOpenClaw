@@ -286,6 +286,13 @@ class VoiceAssistant:
         self.remind_enabled = cal_cfg.get("remind_enabled", True)
         self.remind_check_interval = cal_cfg.get("remind_check_interval", 60)
         self.wechat_remind_cfg = cal_cfg.get("wechat_remind", {})
+        if self.wechat_remind_cfg.get("enabled"):
+            logger.info(
+                "微信提醒已启用 (target=%s)",
+                self.wechat_remind_cfg.get("target", "")[:20],
+            )
+        else:
+            logger.info("微信提醒未启用")
 
     def _set_state(self, new_state: State) -> None:
         """切换状态并记录日志。"""
@@ -748,7 +755,7 @@ class VoiceAssistant:
                     await self.db.mark_event_reminded(ev["id"])
 
             except Exception as e:
-                logger.debug("提醒循环出错: %s", e)
+                logger.warning("提醒循环出错: %s", e)
 
             await asyncio.sleep(self.remind_check_interval)
 
@@ -756,6 +763,7 @@ class VoiceAssistant:
         """通过 OpenClaw message send 发送微信提醒消息。"""
         cfg = self.wechat_remind_cfg
         if not cfg.get("enabled", False):
+            logger.debug("微信提醒未启用，跳过")
             return
 
         target = cfg.get("target", "")
@@ -769,16 +777,21 @@ class VoiceAssistant:
             "--target", target,
             "--message", message,
         ]
-        logger.info("发送微信提醒: %s", message[:50])
+        logger.info("发送微信提醒: %s (target=%s)", message[:50], target[:20])
         try:
             proc = await asyncio.create_subprocess_exec(
                 *cmd,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
             )
-            await asyncio.wait_for(proc.communicate(), timeout=30)
+            stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=30)
+            if proc.returncode != 0:
+                stderr_text = stderr.decode("utf-8", errors="replace").strip()
+                logger.error("微信提醒发送失败 (code=%d): %s", proc.returncode, stderr_text[:200])
+            else:
+                logger.info("微信提醒发送成功")
         except Exception as e:
-            logger.warning("发送微信提醒失败: %s", e)
+            logger.error("发送微信提醒异常: %s", e)
 
     async def _wait_for_speech(self, timeout: float = 5.0) -> bool:
         """

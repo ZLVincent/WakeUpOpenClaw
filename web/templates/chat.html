@@ -176,6 +176,37 @@
   .status-dot.speaking { background: #e94560; }
   @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.4; } }
 
+  /* 音量控制 */
+  .volume-control {
+    padding: 12px;
+    border-top: 1px solid #0f3460;
+  }
+  .volume-control label {
+    font-size: 12px;
+    color: #888;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .volume-control input[type="range"] {
+    flex: 1;
+    height: 4px;
+    -webkit-appearance: none;
+    appearance: none;
+    background: #0f3460;
+    border-radius: 2px;
+    outline: none;
+    cursor: pointer;
+  }
+  .volume-control input[type="range"]::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 14px; height: 14px;
+    border-radius: 50%;
+    background: #e94560;
+    cursor: pointer;
+  }
+  .volume-val { min-width: 28px; text-align: right; font-size: 12px; color: #e0e0e0; }
+
   /* 移动端 */
   @media (max-width: 640px) {
     .sidebar { display: none; }
@@ -203,6 +234,15 @@
       <button class="btn-new" onclick="newConversation()">+ 新对话</button>
     </div>
     <div class="conv-list" id="conv-list"></div>
+    <div class="volume-control">
+      <label>
+        <span>&#x1f50a;</span>
+        <input type="range" id="volume-slider" min="0" max="100" value="50"
+               oninput="onVolumeInput(this.value)"
+               onchange="setVolume(this.value)">
+        <span class="volume-val" id="volume-val">50%</span>
+      </label>
+    </div>
   </div>
 
   <div class="chat-area">
@@ -373,6 +413,43 @@ function connectStatusWs() {
   ws.onerror = () => ws.close();
 }
 connectStatusWs();
+
+// 音量控制
+function onVolumeInput(val) {
+  document.getElementById('volume-val').textContent = val + '%';
+}
+
+let volumeTimer = null;
+async function setVolume(val) {
+  // 防抖：快速拖动时只发最后一次请求
+  clearTimeout(volumeTimer);
+  volumeTimer = setTimeout(async () => {
+    try {
+      const res = await fetch('/api/volume', {
+        method: 'PUT',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({volume: parseInt(val)}),
+      });
+      const data = await res.json();
+      if (data.volume !== undefined) {
+        document.getElementById('volume-slider').value = data.volume;
+        document.getElementById('volume-val').textContent = data.volume + '%';
+      }
+    } catch(e) {}
+  }, 200);
+}
+
+async function loadVolume() {
+  try {
+    const res = await fetch('/api/volume');
+    const data = await res.json();
+    if (data.volume !== undefined) {
+      document.getElementById('volume-slider').value = data.volume;
+      document.getElementById('volume-val').textContent = data.volume + '%';
+    }
+  } catch(e) {}
+}
+loadVolume();
 </script>
 </body>
 </html>

@@ -99,6 +99,10 @@ class WebServer:
         # 状态面板 WebSocket
         self._app.router.add_get("/ws/status", self._handle_ws_status)
 
+        # 音量控制 API
+        self._app.router.add_get("/api/volume", self._handle_volume_get)
+        self._app.router.add_put("/api/volume", self._handle_volume_set)
+
         self._runner = web.AppRunner(self._app)
         await self._runner.setup()
         site = web.TCPSite(self._runner, self.host, self.port)
@@ -387,6 +391,42 @@ class WebServer:
             "status": "ok",
             "output": (output or "").strip()[:200],
         })
+
+    # ------------------------------------------------------------------
+    # 音量控制路由
+    # ------------------------------------------------------------------
+
+    async def _handle_volume_get(self, request: web.Request) -> web.Response:
+        """获取当前系统音量。"""
+        volume = await self._get_system_volume()
+        return web.json_response({"volume": volume})
+
+    async def _handle_volume_set(self, request: web.Request) -> web.Response:
+        """设置系统音量。"""
+        try:
+            data = await request.json()
+            volume = int(data.get("volume", 50))
+        except Exception:
+            return web.json_response({"error": "无效的请求"}, status=400)
+
+        volume = max(0, min(100, volume))
+        output = await self._run_cmd("amixer", "set", "Master", f"{volume}%")
+        if output is None:
+            return web.json_response({"error": "设置音量失败"}, status=500)
+
+        logger.info("Web 设置音量: %d%%", volume)
+        actual = await self._get_system_volume()
+        return web.json_response({"volume": actual})
+
+    async def _get_system_volume(self) -> int:
+        """获取当前系统音量百分比。"""
+        output = await self._run_cmd("amixer", "get", "Master")
+        if not output:
+            return 50  # fallback
+        # 解析 amixer 输出中的百分比，如 [75%]
+        import re
+        match = re.search(r"\[(\d+)%\]", output)
+        return int(match.group(1)) if match else 50
 
     @staticmethod
     async def _run_cmd(*args: str) -> Optional[str]:

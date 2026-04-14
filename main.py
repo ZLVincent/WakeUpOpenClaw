@@ -252,6 +252,7 @@ class VoiceAssistant:
         self.vad_energy_threshold = conv_cfg.get("vad_energy_threshold", 500)
         self.continue_wait_timeout = conv_cfg.get("continue_wait_timeout", 5.0)
         self.max_history_rounds = conv_cfg.get("max_history_rounds", 30)
+        self.barge_in = conv_cfg.get("barge_in", False)
 
         # 技能路由
         skills_cfg = config.get("skills", {})
@@ -479,7 +480,14 @@ class VoiceAssistant:
 
             # ---- SPEAKING: TTS 合成并播放 ----
             self._set_state(State.SPEAKING)
-            await self.tts_engine.speak(reply)
+            barged_in = await self._speak_with_barge_in(reply)
+
+            if barged_in:
+                # 唤醒词打断了播放，直接进入下一轮（已检测到唤醒词）
+                logger.info("语音打断！跳过等待，直接进入下一轮")
+                if self.prompt_sound:
+                    await self._play_sound(self.sound_wake)
+                continue
 
             # 单轮模式：AI 回复后直接退出
             if self.conversation_mode == "single":
@@ -558,6 +566,74 @@ class VoiceAssistant:
         except Exception as e:
             logger.error("开启新对话失败: %s", e)
             return {}
+
+    async def _speak_with_barge_in(self, text: str) -> bool:
+        """
+        TTS 合成并播放，同时支持语音打断。
+
+        如果 barge_in 配置为 True，在播放期间后台运行唤醒词检测。
+        检测到唤醒词时立即中断播放。
+
+        Parameters
+        ----------
+        text : str
+            要朗读的文本
+
+        Returns
+        -------
+        bool
+            True 表示被唤醒词打断了
+        """
+        if not self.barge_in:
+            # 不支持打断，直接播放
+            await self.tts_engine.speak(text)
+            return False
+
+        # 先合成
+        audio_file = await self.tts_engine.synthesize(text)
+        if not audio_file:
+            return False
+
+        # 启动异步播放
+        play_proc = await self.tts_engine.play_async(audio_file)
+        if not play_proc:
+            self.tts_engine._remove_file(audio_file)
+            return False
+
+        # 同时启动唤醒词检测
+        barged = False
+        try:
+            wake_future = asyncio.get_running_loop().run_in_executor(
+                None, lambda: self._blocking_wake_listen(),
+            )
+            play_future = asyncio.ensure_future(play_proc.wait())
+
+            done, pending = await asyncio.wait(
+                [wake_future, play_future],
+                return_when=asyncio.FIRST_COMPLETED,
+            )
+
+            if wake_future in done and wake_future.result():
+                # 唤醒词检测到了，中断播放
+                logger.info("检测到唤醒词，中断 TTS 播放")
+                play_proc.kill()
+                await play_proc.wait()
+                barged = True
+            else:
+                # 播放自然结束
+                logger.info("语音播放完成")
+
+            # 取消未完成的任务
+            for task in pending:
+                task.cancel()
+                try:
+                    await task
+                except (asyncio.CancelledError, Exception):
+                    pass
+        finally:
+            self.tts_engine._remove_file(audio_file)
+
+        return barged
 
     async def _wait_for_speech(self, timeout: float = 5.0) -> bool:
         """

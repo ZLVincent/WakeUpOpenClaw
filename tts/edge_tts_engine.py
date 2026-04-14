@@ -167,6 +167,45 @@ class EdgeTTSEngine:
             logger.error("播放音频时出错: %s", e, exc_info=True)
             return False
 
+    async def play_async(self, audio_file: str) -> Optional[asyncio.subprocess.Process]:
+        """
+        启动音频播放，返回进程对象（不等待完成）。
+
+        用于语音打断场景：调用方可以在播放期间检测唤醒词，
+        检测到后 kill 此进程来中断播放。
+
+        Parameters
+        ----------
+        audio_file : str
+            音频文件路径
+
+        Returns
+        -------
+        asyncio.subprocess.Process | None
+            播放进程，失败返回 None
+        """
+        if not os.path.exists(audio_file):
+            logger.error("音频文件不存在: %s", audio_file)
+            return None
+
+        cmd = [self.player] + self.player_args + [audio_file]
+        logger.debug("播放命令 (async): %s", " ".join(cmd))
+        logger.info("开始播放语音 (可打断)...")
+
+        try:
+            process = await asyncio.create_subprocess_exec(
+                *cmd,
+                stdout=asyncio.subprocess.DEVNULL,
+                stderr=asyncio.subprocess.DEVNULL,
+            )
+            return process
+        except FileNotFoundError:
+            logger.error("播放器 '%s' 不可用", self.player)
+            return None
+        except Exception as e:
+            logger.error("启动播放器失败: %s", e)
+            return None
+
     async def speak(self, text: str) -> bool:
         """
         合成语音并播放（一步到位）。

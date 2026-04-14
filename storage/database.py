@@ -19,7 +19,7 @@ logger = get_logger("storage")
 
 # 建表 SQL
 _CREATE_CONVERSATIONS_TABLE = """
-CREATE TABLE IF NOT EXISTS conversations (
+CREATE TABLE IF NOT EXISTS zlpi_conversations (
     id              BIGINT AUTO_INCREMENT PRIMARY KEY,
     session_id      VARCHAR(64) NOT NULL,
     title           VARCHAR(200) DEFAULT '',
@@ -34,7 +34,7 @@ CREATE TABLE IF NOT EXISTS conversations (
 """
 
 _CREATE_MESSAGES_TABLE = """
-CREATE TABLE IF NOT EXISTS messages (
+CREATE TABLE IF NOT EXISTS zlpi_messages (
     id              BIGINT AUTO_INCREMENT PRIMARY KEY,
     conversation_id BIGINT NOT NULL,
     role            VARCHAR(20) NOT NULL,
@@ -43,12 +43,12 @@ CREATE TABLE IF NOT EXISTS messages (
     duration_ms     INT DEFAULT NULL,
     created_at      DATETIME DEFAULT CURRENT_TIMESTAMP,
     INDEX idx_conversation_id (conversation_id),
-    FOREIGN KEY (conversation_id) REFERENCES conversations(id) ON DELETE CASCADE
+    FOREIGN KEY (conversation_id) REFERENCES zlpi_conversations(id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 """
 
 _CREATE_EVENTS_TABLE = """
-CREATE TABLE IF NOT EXISTS events (
+CREATE TABLE IF NOT EXISTS zlpi_events (
     id              BIGINT AUTO_INCREMENT PRIMARY KEY,
     title           VARCHAR(200) NOT NULL,
     description     TEXT DEFAULT '',
@@ -151,7 +151,7 @@ class ChatDatabase:
                     logger.error("创建 events 表失败: %s", e)
                     # 尝试不带索引的简化版本建表
                     await cur.execute("""
-                        CREATE TABLE IF NOT EXISTS events (
+                        CREATE TABLE IF NOT EXISTS zlpi_events (
                             id              BIGINT AUTO_INCREMENT PRIMARY KEY,
                             title           VARCHAR(200) NOT NULL,
                             description     TEXT,
@@ -195,7 +195,7 @@ class ChatDatabase:
         async with self._pool.acquire() as conn:
             async with conn.cursor() as cur:
                 await cur.execute(
-                    "INSERT INTO conversations (session_id, source) VALUES (%s, %s)",
+                    "INSERT INTO zlpi_conversations (session_id, source) VALUES (%s, %s)",
                     (session_id, source),
                 )
                 conversation_id = cur.lastrowid
@@ -210,7 +210,7 @@ class ChatDatabase:
         async with self._pool.acquire() as conn:
             async with conn.cursor(aiomysql.DictCursor) as cur:
                 await cur.execute(
-                    "SELECT * FROM conversations WHERE is_active = 1 "
+                    "SELECT * FROM zlpi_conversations WHERE is_active = 1 "
                     "ORDER BY updated_at DESC LIMIT 1"
                 )
                 return await cur.fetchone()
@@ -220,7 +220,7 @@ class ChatDatabase:
         async with self._pool.acquire() as conn:
             async with conn.cursor() as cur:
                 await cur.execute(
-                    "UPDATE conversations SET is_active = 0 WHERE id = %s",
+                    "UPDATE zlpi_conversations SET is_active = 0 WHERE id = %s",
                     (conversation_id,),
                 )
         logger.info("对话 #%d 已归档", conversation_id)
@@ -231,7 +231,7 @@ class ChatDatabase:
             async with conn.cursor() as cur:
                 # messages 有外键 ON DELETE CASCADE，删 conversation 即可
                 await cur.execute(
-                    "DELETE FROM conversations WHERE id = %s",
+                    "DELETE FROM zlpi_conversations WHERE id = %s",
                     (conversation_id,),
                 )
         logger.info("对话 #%d 已删除", conversation_id)
@@ -241,7 +241,7 @@ class ChatDatabase:
         async with self._pool.acquire() as conn:
             async with conn.cursor() as cur:
                 await cur.execute(
-                    "UPDATE conversations SET is_active = 0 WHERE is_active = 1"
+                    "UPDATE zlpi_conversations SET is_active = 0 WHERE is_active = 1"
                 )
 
     async def update_conversation_title(
@@ -251,7 +251,7 @@ class ChatDatabase:
         async with self._pool.acquire() as conn:
             async with conn.cursor() as cur:
                 await cur.execute(
-                    "UPDATE conversations SET title = %s WHERE id = %s",
+                    "UPDATE zlpi_conversations SET title = %s WHERE id = %s",
                     (title[:200], conversation_id),
                 )
 
@@ -260,12 +260,12 @@ class ChatDatabase:
         async with self._pool.acquire() as conn:
             async with conn.cursor() as cur:
                 await cur.execute(
-                    "UPDATE conversations SET round_count = round_count + 1 "
+                    "UPDATE zlpi_conversations SET round_count = round_count + 1 "
                     "WHERE id = %s",
                     (conversation_id,),
                 )
                 await cur.execute(
-                    "SELECT round_count FROM conversations WHERE id = %s",
+                    "SELECT round_count FROM zlpi_conversations WHERE id = %s",
                     (conversation_id,),
                 )
                 row = await cur.fetchone()
@@ -278,7 +278,7 @@ class ChatDatabase:
                 await cur.execute(
                     "SELECT id, session_id, title, created_at, updated_at, "
                     "is_active, round_count, source "
-                    "FROM conversations ORDER BY updated_at DESC LIMIT %s",
+                    "FROM zlpi_conversations ORDER BY updated_at DESC LIMIT %s",
                     (limit,),
                 )
                 rows = await cur.fetchall()
@@ -312,7 +312,7 @@ class ChatDatabase:
         async with self._pool.acquire() as conn:
             async with conn.cursor() as cur:
                 await cur.execute(
-                    "INSERT INTO messages "
+                    "INSERT INTO zlpi_messages "
                     "(conversation_id, role, content, source, duration_ms) "
                     "VALUES (%s, %s, %s, %s, %s)",
                     (conversation_id, role, content, source, duration_ms),
@@ -330,7 +330,7 @@ class ChatDatabase:
             async with conn.cursor(aiomysql.DictCursor) as cur:
                 await cur.execute(
                     "SELECT id, role, content, source, duration_ms, created_at "
-                    "FROM messages WHERE conversation_id = %s "
+                    "FROM zlpi_messages WHERE conversation_id = %s "
                     "ORDER BY created_at ASC LIMIT %s OFFSET %s",
                     (conversation_id, limit, offset),
                 )
@@ -427,7 +427,7 @@ class ChatDatabase:
         async with self._pool.acquire() as conn:
             async with conn.cursor() as cur:
                 await cur.execute(
-                    "INSERT INTO events "
+                    "INSERT INTO zlpi_events "
                     "(title, description, date, start_time, end_time, all_day, "
                     "color, category, remind_minutes) "
                     "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)",
@@ -455,7 +455,7 @@ class ChatDatabase:
         if not set_parts:
             return
         values.append(event_id)
-        sql = f"UPDATE events SET {', '.join(set_parts)} WHERE id = %s"
+        sql = f"UPDATE zlpi_events SET {', '.join(set_parts)} WHERE id = %s"
         async with self._pool.acquire() as conn:
             async with conn.cursor() as cur:
                 await cur.execute(sql, tuple(values))
@@ -465,14 +465,14 @@ class ChatDatabase:
         """删除日程事件。"""
         async with self._pool.acquire() as conn:
             async with conn.cursor() as cur:
-                await cur.execute("DELETE FROM events WHERE id = %s", (event_id,))
+                await cur.execute("DELETE FROM zlpi_events WHERE id = %s", (event_id,))
         logger.info("删除日程 #%d", event_id)
 
     async def get_event(self, event_id: int) -> Optional[dict]:
         """获取单个日程事件。"""
         async with self._pool.acquire() as conn:
             async with conn.cursor(aiomysql.DictCursor) as cur:
-                await cur.execute("SELECT * FROM events WHERE id = %s", (event_id,))
+                await cur.execute("SELECT * FROM zlpi_events WHERE id = %s", (event_id,))
                 row = await cur.fetchone()
                 return self._format_event_row(row) if row else None
 
@@ -481,7 +481,7 @@ class ChatDatabase:
         async with self._pool.acquire() as conn:
             async with conn.cursor(aiomysql.DictCursor) as cur:
                 await cur.execute(
-                    "SELECT * FROM events WHERE date >= %s AND date <= %s "
+                    "SELECT * FROM zlpi_events WHERE date >= %s AND date <= %s "
                     "ORDER BY date ASC, all_day DESC, start_time ASC",
                     (start, end),
                 )
@@ -500,7 +500,7 @@ class ChatDatabase:
         async with self._pool.acquire() as conn:
             async with conn.cursor(aiomysql.DictCursor) as cur:
                 await cur.execute(
-                    "SELECT * FROM events "
+                    "SELECT * FROM zlpi_events "
                     "WHERE date = %s AND reminded = 0 AND remind_minutes > 0 "
                     "AND all_day = 0 AND start_time IS NOT NULL "
                     "AND SUBTIME(start_time, SEC_TO_TIME(remind_minutes * 60)) <= %s",
@@ -519,6 +519,6 @@ class ChatDatabase:
         async with self._pool.acquire() as conn:
             async with conn.cursor() as cur:
                 await cur.execute(
-                    "UPDATE events SET reminded = 0 WHERE date = %s",
+                    "UPDATE zlpi_events SET reminded = 0 WHERE date = %s",
                     (today,),
                 )

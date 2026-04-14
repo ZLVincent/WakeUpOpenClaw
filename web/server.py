@@ -82,6 +82,7 @@ class WebServer:
         self._app.router.add_post("/api/conversations/new", self._handle_conversation_new)
         self._app.router.add_get("/api/conversations/{id}/messages", self._handle_conversation_messages)
         self._app.router.add_post("/api/conversations/{id}/archive", self._handle_conversation_archive)
+        self._app.router.add_delete("/api/conversations/{id}", self._handle_conversation_delete)
 
         # 配置管理页面
         self._app.router.add_get("/config", self._handle_config_page)
@@ -229,6 +230,22 @@ class WebServer:
         try:
             conv_id = int(request.match_info["id"])
             await self.db.archive_conversation(conv_id)
+            return web.json_response({"status": "ok"})
+        except Exception as e:
+            return web.json_response({"error": str(e)}, status=500)
+
+    async def _handle_conversation_delete(self, request: web.Request) -> web.Response:
+        """删除对话及其所有消息。"""
+        if not self.db:
+            return web.json_response({"error": "数据库不可用"}, status=500)
+        try:
+            conv_id = int(request.match_info["id"])
+            # 如果删除的是当前活跃对话，需要清除引用
+            if (self._assistant
+                    and self._assistant._current_conversation
+                    and self._assistant._current_conversation.get("id") == conv_id):
+                self._assistant._current_conversation = None
+            await self.db.delete_conversation(conv_id)
             return web.json_response({"status": "ok"})
         except Exception as e:
             return web.json_response({"error": str(e)}, status=500)

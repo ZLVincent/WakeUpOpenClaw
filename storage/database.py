@@ -181,6 +181,17 @@ class ChatDatabase:
                 )
         logger.info("对话 #%d 已归档", conversation_id)
 
+    async def delete_conversation(self, conversation_id: int) -> None:
+        """删除对话及其所有消息。"""
+        async with self._pool.acquire() as conn:
+            async with conn.cursor() as cur:
+                # messages 有外键 ON DELETE CASCADE，删 conversation 即可
+                await cur.execute(
+                    "DELETE FROM conversations WHERE id = %s",
+                    (conversation_id,),
+                )
+        logger.info("对话 #%d 已删除", conversation_id)
+
     async def archive_all_conversations(self) -> None:
         """归档所有活跃对话。"""
         async with self._pool.acquire() as conn:

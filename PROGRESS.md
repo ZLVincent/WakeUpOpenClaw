@@ -59,7 +59,7 @@
 
 | 功能 | 状态 | 说明 |
 |------|------|------|
-| Web 聊天页面 | done | aiohttp，暗色主题，对话列表侧边栏，消息标注来源(voice/web) |
+| Web 聊天页面 | done | aiohttp，暗色主题，对话列表侧边栏，消息标注来源(voice/web)，删除对话 |
 | Web 配置管理 | done | 在线编辑 config.yaml，枚举字段下拉框，保存后部分需重启 |
 | 实时状态面板 | done | WebSocket 推送，聊天页顶部彩色状态点 (IDLE/LISTENING/THINKING/SPEAKING) |
 | OTA 更新 | done | git fetch→检查→git pull→supervisorctl restart WakeUpOpenClaw |

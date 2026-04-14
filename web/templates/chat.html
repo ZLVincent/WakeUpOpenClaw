@@ -88,6 +88,20 @@
     flex: 1;
   }
   .conv-item .meta { font-size: 10px; color: #555; margin-left: 6px; white-space: nowrap; }
+  .conv-item .btn-del {
+    display: none;
+    background: none;
+    border: none;
+    color: #666;
+    font-size: 14px;
+    cursor: pointer;
+    padding: 0 4px;
+    line-height: 1;
+    border-radius: 3px;
+    flex-shrink: 0;
+  }
+  .conv-item:hover .btn-del { display: inline-block; }
+  .conv-item .btn-del:hover { color: #e94560; background: #1a1a2e; }
   .conv-item .badge-active {
     width: 6px; height: 6px; border-radius: 50%; background: #4caf50;
     display: inline-block; margin-left: 4px; flex-shrink: 0;
@@ -328,13 +342,40 @@ async function loadConversations() {
     for (const c of data.conversations) {
       const div = document.createElement('div');
       div.className = 'conv-item' + (c.id === activeConvId ? ' active' : '');
-      div.innerHTML =
-        '<span class="title">' + escapeHtml(c.title || '新对话') + '</span>' +
-        '<span class="meta">' + (c.round_count || 0) + '轮' +
-        (c.is_active ? '<span class="badge-active"></span>' : '') + '</span>';
-      div.onclick = () => loadConversation(c.id);
+
+      const title = document.createElement('span');
+      title.className = 'title';
+      title.textContent = c.title || '新对话';
+      title.onclick = () => loadConversation(c.id);
+      div.appendChild(title);
+
+      const meta = document.createElement('span');
+      meta.className = 'meta';
+      meta.innerHTML = (c.round_count || 0) + '轮' +
+        (c.is_active ? '<span class="badge-active"></span>' : '');
+      div.appendChild(meta);
+
+      const del = document.createElement('button');
+      del.className = 'btn-del';
+      del.innerHTML = '&times;';
+      del.title = '删除对话';
+      del.onclick = (e) => { e.stopPropagation(); deleteConversation(c.id, c.title); };
+      div.appendChild(del);
+
       list.appendChild(div);
     }
+  } catch(e) {}
+}
+
+async function deleteConversation(convId, title) {
+  if (!confirm('确定删除对话「' + (title || '新对话') + '」？消息将不可恢复。')) return;
+  try {
+    await fetch('/api/conversations/' + convId, {method: 'DELETE'});
+    if (convId === activeConvId) {
+      activeConvId = null;
+      chatBox.innerHTML = '<div class="empty-hint">对话已删除，请选择或新建对话</div>';
+    }
+    loadConversations();
   } catch(e) {}
 }
 

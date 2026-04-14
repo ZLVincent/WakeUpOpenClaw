@@ -202,7 +202,7 @@ calendar:
   # 微信提醒配置（通过 openclaw message send 发送）
   wechat_remind:
     # 是否启用微信提醒
-    enabled: false
+    enabled: true
     # openclaw message send 的 --target 参数（chat_id 格式）
     target: "o9cq80wES_EZ3kSkYZ08KgWfiM6M@im.wechat"
 

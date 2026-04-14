@@ -63,6 +63,8 @@
 | 实时状态面板 | done | WebSocket 推送，聊天页顶部彩色状态点 (IDLE/LISTENING/THINKING/SPEAKING) |
 | OTA 更新 | done | git fetch→检查→git pull→supervisorctl restart WakeUpOpenClaw |
 | 服务重启 | done | supervisorctl restart WakeUpOpenClaw |
+| Web 音量控制 | done | 聊天页侧边栏底部滑块，amixer 控制系统音量 |
+| Web 日志查看 | done | /logs 页面，读取日志文件，级别/模块过滤，关键词搜索高亮，自动刷新 |
 
 ### 第五阶段：安全与运维（已完成）
 
@@ -108,10 +110,11 @@ WakeUpOpenClaw/
 │   └── database.py              # MySQL 对话历史 (aiomysql 异步)
 │
 ├── web/
-│   ├── server.py                # aiohttp 服务端 (聊天/配置/OTA/WebSocket)
+│   ├── server.py                # aiohttp 服务端 (聊天/配置/OTA/WebSocket/日志/音量)
 │   └── templates/
-│       ├── chat.html            #   聊天页面 (对话列表 + 实时状态)
-│       └── config.html          #   配置管理 + 系统管理页面
+│       ├── chat.html            #   聊天页面 (对话列表 + 实时状态 + 音量控制)
+│       ├── config.html          #   配置管理 + 系统管理页面
+│       └── logs.html            #   日志查看页面
 │
 ├── utils/
 │   ├── logger.py                # 彩色日志 (终端 + 文件轮转)

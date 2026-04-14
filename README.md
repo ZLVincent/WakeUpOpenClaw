@@ -58,8 +58,9 @@
 
     同时运行:
           [Web 服务 :8084]
-            ├── /         聊天页面 (实时状态)
+            ├── /         聊天页面 (实时状态 + 音量控制)
             ├── /config   配置管理 + OTA 更新
+            ├── /logs     日志查看 (搜索/过滤/着色)
             └── /ws/status WebSocket 状态推送
 ```
 
@@ -88,10 +89,11 @@ WakeUpOpenClaw/
 ├── storage/
 │   └── database.py              # MySQL 对话历史持久化
 ├── web/                         # Web 界面
-│   ├── server.py                #   aiohttp 服务端（聊天/配置/OTA/WebSocket）
+│   ├── server.py                #   aiohttp 服务端（聊天/配置/OTA/WebSocket/日志）
 │   └── templates/
-│       ├── chat.html            #   聊天页面（含实时状态面板）
-│       └── config.html          #   配置管理 + 系统管理页面
+│       ├── chat.html            #   聊天页面（含实时状态面板 + 音量控制）
+│       ├── config.html          #   配置管理 + 系统管理页面
+│       └── logs.html            #   日志查看页面
 ├── utils/
 │   └── logger.py                # 彩色日志（终端 + 文件轮转）
 ├── static/                      # 提示音文件
@@ -298,14 +300,16 @@ conversation:
 
 | 页面 | 地址 | 功能 |
 |------|------|------|
-| 聊天 | `http://<IP>:8084/` | 文本对话 + 对话历史 + 实时状态指示器 |
+| 聊天 | `http://<IP>:8084/` | 文本对话 + 对话历史 + 实时状态指示器 + 音量控制 |
 | 配置 | `http://<IP>:8084/config` | 在线编辑 config + 检查更新 + 重启服务 |
+| 日志 | `http://<IP>:8084/logs` | 查看日志文件，支持级别/模块过滤、关键词搜索、自动刷新 |
 
 ### 聊天页面
 
 - 左侧对话列表，点击切换历史对话
 - "新对话"按钮创建新会话
 - 顶部实时状态点：绿色(待唤醒) / 蓝色(录音) / 橙色(思考) / 红色(播放)
+- 底部音量控制滑块
 - 消息标注来源（voice / web）
 
 ### 配置页面
@@ -313,6 +317,16 @@ conversation:
 - 按段折叠显示所有配置
 - 枚举字段渲染为下拉框
 - 底部系统管理：当前版本、检查更新、拉取更新并重启、仅重启
+
+### 日志页面
+
+- 读取 `logs/assistant.log` 文件最后 1000 行
+- 按日志级别过滤（DEBUG / INFO / WARNING / ERROR / CRITICAL）
+- 按模块过滤（main / wake_up / asr / agent / tts / web 等）
+- 关键词搜索，实时高亮匹配文本
+- 日志级别着色：DEBUG 青色、INFO 绿色、WARNING 黄色、ERROR 红色
+- 切换轮转日志文件（assistant.log.1 等）
+- 自动刷新（3 秒轮询，可开关）
 
 ## 日志
 

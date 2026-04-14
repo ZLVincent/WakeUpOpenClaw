@@ -145,7 +145,29 @@ class ChatDatabase:
             async with conn.cursor() as cur:
                 await cur.execute(_CREATE_CONVERSATIONS_TABLE)
                 await cur.execute(_CREATE_MESSAGES_TABLE)
-                await cur.execute(_CREATE_EVENTS_TABLE)
+                try:
+                    await cur.execute(_CREATE_EVENTS_TABLE)
+                except Exception as e:
+                    logger.error("创建 events 表失败: %s", e)
+                    # 尝试不带索引的简化版本建表
+                    await cur.execute("""
+                        CREATE TABLE IF NOT EXISTS events (
+                            id              BIGINT AUTO_INCREMENT PRIMARY KEY,
+                            title           VARCHAR(200) NOT NULL,
+                            description     TEXT,
+                            date            DATE NOT NULL,
+                            start_time      TIME DEFAULT NULL,
+                            end_time        TIME DEFAULT NULL,
+                            all_day         TINYINT(1) DEFAULT 0,
+                            color           VARCHAR(20) DEFAULT '#0f3460',
+                            category        VARCHAR(50) DEFAULT '',
+                            remind_minutes  INT DEFAULT 5,
+                            reminded        TINYINT(1) DEFAULT 0,
+                            created_at      DATETIME DEFAULT CURRENT_TIMESTAMP,
+                            updated_at      DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+                        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+                    """)
+                    logger.info("events 表已通过简化 SQL 创建")
         logger.info("数据表已就绪")
 
     async def close(self) -> None:

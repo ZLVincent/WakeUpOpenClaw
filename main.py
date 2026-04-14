@@ -350,8 +350,9 @@ class VoiceAssistant:
         logger.info("[0/4] 初始化数据库...")
         try:
             await self.db.initialize()
+            logger.info("数据库初始化成功")
         except Exception as e:
-            logger.warning("数据库初始化失败，对话历史将不会持久化: %s", e)
+            logger.warning("数据库初始化失败，对话历史和日程将不会持久化: %s", e, exc_info=True)
 
         # 加载或创建活跃对话
         try:

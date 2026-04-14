@@ -168,6 +168,9 @@ conversation:
   # 是否允许语音打断 TTS 播放（Barge-in）
   # 开启后，AI 回复播放期间可以说唤醒词来打断，直接进入新一轮对话
   barge_in: false
+  # 是否启用流式 TTS（分句合成，边合成边播放）
+  # 开启后长文本回复的首字延迟显著降低，但短回复无明显区别
+  streaming_tts: false
 
 # Web 聊天界面配置
 web:

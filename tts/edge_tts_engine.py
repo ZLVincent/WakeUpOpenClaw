@@ -227,10 +227,124 @@ class EdgeTTSEngine:
         try:
             return await self.play(audio_file)
         finally:
-            # 无论播放成功与否，都清理临时文件
             self._remove_file(audio_file)
-            # 顺便清理残留的旧临时文件
             self._cleanup_stale_files()
+
+    async def speak_streaming(self, text: str) -> bool:
+        """
+        流式 TTS：分句合成，边合成边播放。
+
+        将文本按句子拆分，逐句合成音频文件并播放。
+        第一句合成完就开始播放，后续句子在后台继续合成。
+        显著降低长文本的首字延迟。
+
+        Parameters
+        ----------
+        text : str
+            要朗读的文本
+
+        Returns
+        -------
+        bool
+            是否成功
+        """
+        if not text or not text.strip():
+            return False
+
+        text = self._clean_for_speech(text)
+        sentences = self._split_sentences(text)
+
+        if not sentences:
+            return False
+
+        # 只有一句，退化为普通 speak
+        if len(sentences) == 1:
+            return await self.speak(sentences[0])
+
+        logger.info("流式 TTS: 共 %d 句", len(sentences))
+
+        queue: asyncio.Queue[Optional[str]] = asyncio.Queue()
+        synth_files: list[str] = []
+
+        async def synthesize_worker():
+            """后台逐句合成，将文件路径放入队列。"""
+            for i, sentence in enumerate(sentences):
+                if not sentence.strip():
+                    continue
+                temp_file = os.path.join(
+                    self._temp_dir,
+                    f"tts_stream_{int(time.time() * 1000)}_{i}.mp3",
+                )
+                try:
+                    communicate = edge_tts.Communicate(
+                        text=sentence,
+                        voice=self.voice,
+                        rate=self.rate,
+                        volume=self.volume,
+                        proxy=self.proxy,
+                    )
+                    await communicate.save(temp_file)
+                    synth_files.append(temp_file)
+                    await queue.put(temp_file)
+                    logger.debug("流式合成第 %d 句完成: %s", i + 1, sentence[:30])
+                except Exception as e:
+                    logger.warning("流式合成第 %d 句失败: %s", i + 1, e)
+            # 结束信号
+            await queue.put(None)
+
+        async def play_worker():
+            """从队列取文件并依次播放。"""
+            while True:
+                filepath = await queue.get()
+                if filepath is None:
+                    break
+                await self.play(filepath)
+                self._remove_file(filepath)
+
+        # 并行运行合成和播放
+        synth_task = asyncio.create_task(synthesize_worker())
+        try:
+            await play_worker()
+            await synth_task
+        except Exception as e:
+            logger.error("流式 TTS 出错: %s", e)
+            synth_task.cancel()
+            return False
+        finally:
+            # 清理所有合成文件
+            for f in synth_files:
+                self._remove_file(f)
+
+        logger.info("流式 TTS 播放完成 (%d 句)", len(sentences))
+        return True
+
+    @staticmethod
+    def _split_sentences(text: str) -> list[str]:
+        """
+        按标点和换行将文本拆分为句子。
+
+        支持中英文标点：句号、问号、感叹号、分号、换行。
+        """
+        # 按中英文句末标点和换行分割
+        parts = re.split(r'(?<=[。！？；\n.!?;])\s*', text)
+        # 过滤空串，合并过短的片段
+        sentences = []
+        buffer = ""
+        for part in parts:
+            part = part.strip()
+            if not part:
+                continue
+            buffer += part
+            # 片段至少 5 个字才单独成句，否则和下一段合并
+            if len(buffer) >= 5:
+                sentences.append(buffer)
+                buffer = ""
+        if buffer:
+            if sentences:
+                sentences[-1] += buffer
+            else:
+                sentences.append(buffer)
+        return sentences
 
     async def check_available(self) -> bool:
         """

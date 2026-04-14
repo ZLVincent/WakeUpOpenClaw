@@ -253,6 +253,7 @@ class VoiceAssistant:
         self.continue_wait_timeout = conv_cfg.get("continue_wait_timeout", 5.0)
         self.max_history_rounds = conv_cfg.get("max_history_rounds", 30)
         self.barge_in = conv_cfg.get("barge_in", False)
+        self.streaming_tts = conv_cfg.get("streaming_tts", False)
 
         # 技能路由
         skills_cfg = config.get("skills", {})
@@ -585,8 +586,11 @@ class VoiceAssistant:
             True 表示被唤醒词打断了
         """
         if not self.barge_in:
-            # 不支持打断，直接播放
-            await self.tts_engine.speak(text)
+            # 不支持打断，直接播放（支持流式）
+            if self.streaming_tts:
+                await self.tts_engine.speak_streaming(text)
+            else:
+                await self.tts_engine.speak(text)
             return False
 
         # 先合成

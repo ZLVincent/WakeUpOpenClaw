@@ -30,6 +30,7 @@ import yaml
 from agent.openclaw_client import OpenClawClient
 from asr.funasr_client import FunASRClient
 from audio.recorder import AudioRecorder
+from skills.router import SkillRouter
 from storage.database import ChatDatabase
 from tts.edge_tts_engine import EdgeTTSEngine
 from utils.logger import get_logger, setup_logging
@@ -252,6 +253,13 @@ class VoiceAssistant:
         self.continue_wait_timeout = conv_cfg.get("continue_wait_timeout", 5.0)
         self.max_history_rounds = conv_cfg.get("max_history_rounds", 30)
 
+        # 技能路由
+        skills_cfg = config.get("skills", {})
+        self.skill_router = SkillRouter(
+            commands=skills_cfg.get("commands", []),
+            enabled=skills_cfg.get("enabled", True),
+        )
+
     def _set_state(self, new_state: State) -> None:
         """切换状态并记录日志。"""
         old_state = self._state
@@ -429,6 +437,24 @@ class VoiceAssistant:
             # 播放录音结束提示音
             if self.prompt_sound:
                 await self._play_sound(self.sound_done)
+
+            # ---- 技能匹配：本地快速响应 ----
+            skill_result = await self.skill_router.match(recognized_text)
+            if skill_result:
+                logger.info("技能命中: action=%s", skill_result.action)
+                # 保存到数据库
+                await self._save_message("user", recognized_text, "voice")
+                await self._save_message("assistant", skill_result.text, "voice")
+
+                # 特殊动作：新建对话
+                if skill_result.action == "new_conversation":
+                    await self.start_new_conversation("voice")
+
+                # TTS 播报技能回复
+                if skill_result.text:
+                    self._set_state(State.SPEAKING)
+                    await self.tts_engine.speak(skill_result.text)
+                continue
 
             # 保存用户消息到数据库
             await self._save_message("user", recognized_text, "voice")

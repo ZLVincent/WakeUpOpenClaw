@@ -102,6 +102,25 @@ tts:
   # 不需要代理时设为 null 或删除此行
   proxy: "http://127.0.0.1:7890"
 
+# 本地技能配置 (关键词匹配，不经过 AI，快速响应)
+skills:
+  enabled: true
+  commands:
+    - keywords: ["大声一点", "音量调大", "声音大一点"]
+      action: "volume_up"
+      reply: "好的，已调大音量"
+    - keywords: ["小声一点", "音量调小", "声音小一点"]
+      action: "volume_down"
+      reply: "好的，已调小音量"
+    - keywords: ["停止播放", "别播了", "安静"]
+      action: "stop_playback"
+      reply: "好的，已停止播放"
+    - keywords: ["现在几点", "几点了", "报时"]
+      action: "current_time"
+    - keywords: ["新对话", "重新开始"]
+      action: "new_conversation"
+      reply: "好的，已开启新对话"
+
 # 音频配置
 audio:
   # 采样率 (Hz)，FunASR / Porcupine / Snowboy 都使用 16000

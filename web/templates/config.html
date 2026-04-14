@@ -178,6 +178,18 @@ const sectionNames = {
   logging: '日志',
 };
 
+// 枚举字段定义: path -> [选项列表]
+const enumFields = {
+  'conversation.mode':    ['single', 'multi'],
+  'wake_up.engine':       ['snowboy', 'porcupine'],
+  'asr.mode':             ['offline', 'online', '2pass'],
+  'agent.method':         ['cli', 'websocket'],
+  'agent.thinking':       ['off', 'minimal', 'low', 'medium', 'high', 'xhigh'],
+  'logging.level':        ['DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL'],
+  'audio.format':         ['int16'],
+  'tts.voice':            ['zh-CN-XiaoxiaoNeural', 'zh-CN-YunxiNeural', 'zh-CN-XiaoyiNeural', 'zh-CN-YunyangNeural', 'zh-CN-XiaohanNeural'],
+};
+
 function showToast(msg, type) {
   const t = document.getElementById('toast');
   t.textContent = msg;
@@ -241,6 +253,22 @@ function renderField(key, value, path) {
     ta.dataset.type = 'json';
     ta.rows = Math.min(Object.keys(value).length + 2, 10);
     valEl.appendChild(ta);
+  } else if (path in enumFields) {
+    // 枚举字段 -> 下拉框
+    const sel = document.createElement('select');
+    sel.dataset.path = path;
+    sel.dataset.type = 'str';
+    const options = enumFields[path];
+    // 如果当前值不在选项列表中，加到最前面
+    const allOpts = options.includes(String(value)) ? options : [String(value), ...options];
+    for (const opt of allOpts) {
+      const o = document.createElement('option');
+      o.value = opt;
+      o.textContent = opt;
+      if (opt === String(value)) o.selected = true;
+      sel.appendChild(o);
+    }
+    valEl.appendChild(sel);
   } else {
     // string - 长文本用 textarea
     const isLong = String(value).length > 80 || String(value).includes('\n');

@@ -157,6 +157,25 @@
   }
   .empty-hint { text-align: center; color: #555; padding: 40px; font-size: 14px; }
 
+  /* 状态指示器 */
+  .status-bar {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12px;
+    color: #888;
+  }
+  .status-dot {
+    width: 8px; height: 8px; border-radius: 50%;
+    background: #555;
+    transition: background 0.3s;
+  }
+  .status-dot.idle { background: #4caf50; }
+  .status-dot.listening { background: #2196f3; animation: pulse 1s infinite; }
+  .status-dot.thinking { background: #ff9800; animation: pulse 1.5s infinite; }
+  .status-dot.speaking { background: #e94560; }
+  @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.4; } }
+
   /* 移动端 */
   @media (max-width: 640px) {
     .sidebar { display: none; }
@@ -170,6 +189,10 @@
   <nav>
     <a href="/" class="active">聊天</a>
     <a href="/config">配置</a>
+    <div class="status-bar">
+      <span class="status-dot" id="status-dot"></span>
+      <span id="status-text">连接中...</span>
+    </div>
   </nav>
 </header>
 
@@ -322,6 +345,34 @@ async function init() {
 }
 init();
 msgInput.focus();
+
+// WebSocket 状态面板
+const stateLabels = {
+  idle: '待唤醒', listening: '录音中', thinking: 'AI 思考中', speaking: '语音播放中', shutdown: '已关闭',
+};
+
+function connectStatusWs() {
+  const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+  const ws = new WebSocket(proto + '//' + location.host + '/ws/status');
+  ws.onmessage = (e) => {
+    try {
+      const data = JSON.parse(e.data);
+      if (data.type === 'status') {
+        const dot = document.getElementById('status-dot');
+        const txt = document.getElementById('status-text');
+        dot.className = 'status-dot ' + data.state;
+        txt.textContent = stateLabels[data.state] || data.state;
+      }
+    } catch(err) {}
+  };
+  ws.onclose = () => {
+    document.getElementById('status-text').textContent = '已断开';
+    document.getElementById('status-dot').className = 'status-dot';
+    setTimeout(connectStatusWs, 3000);
+  };
+  ws.onerror = () => ws.close();
+}
+connectStatusWs();
 </script>
 </body>
 </html>

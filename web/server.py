@@ -65,6 +65,7 @@ class WebServer:
         self.config_path = config_path
         self.db = database
         self._assistant = None  # 由 main.py 设置，引用 VoiceAssistant 实例
+        self._ws_clients: set[web.WebSocketResponse] = set()
         self._app: Optional[web.Application] = None
         self._runner: Optional[web.AppRunner] = None
 
@@ -94,6 +95,9 @@ class WebServer:
         self._app.router.add_get("/api/system/update/check", self._handle_update_check)
         self._app.router.add_post("/api/system/update/apply", self._handle_update_apply)
         self._app.router.add_post("/api/system/restart", self._handle_restart)
+
+        # 状态面板 WebSocket
+        self._app.router.add_get("/ws/status", self._handle_ws_status)
 
         self._runner = web.AppRunner(self._app)
         await self._runner.setup()
@@ -401,3 +405,62 @@ class WebServer:
         except Exception as e:
             logger.error("执行命令 %s 失败: %s", args, e)
             return None
+
+    # ------------------------------------------------------------------
+    # WebSocket 状态面板
+    # ------------------------------------------------------------------
+
+    async def _handle_ws_status(self, request: web.Request) -> web.WebSocketResponse:
+        """WebSocket 状态推送端点。"""
+        ws = web.WebSocketResponse()
+        await ws.prepare(request)
+        self._ws_clients.add(ws)
+        logger.debug("WebSocket 状态客户端已连接 (共 %d)", len(self._ws_clients))
+
+        try:
+            # 发送当前状态
+            await ws.send_json(self._get_status_snapshot())
+            # 保持连接，等待客户端关闭
+            async for msg in ws:
+                pass  # 不需要接收客户端消息
+        finally:
+            self._ws_clients.discard(ws)
+            logger.debug("WebSocket 状态客户端已断开 (剩余 %d)", len(self._ws_clients))
+
+        return ws
+
+    def _get_status_snapshot(self) -> dict:
+        """获取当前状态快照。"""
+        state = "unknown"
+        conv_round = 0
+        if self._assistant:
+            state = self._assistant._state.value
+            conv_round = self._assistant._conversation_round
+        return {
+            "type": "status",
+            "state": state,
+            "conversation_round": conv_round,
+        }
+
+    async def broadcast_status(self, state: str, **extra) -> None:
+        """
+        向所有 WebSocket 客户端广播状态更新。
+
+        Parameters
+        ----------
+        state : str
+            当前状态 (idle / listening / thinking / speaking)
+        **extra
+            额外字段，如 text, duration 等
+        """
+        if not self._ws_clients:
+            return
+
+        msg = {"type": "status", "state": state, **extra}
+        dead = set()
+        for ws in self._ws_clients:
+            try:
+                await ws.send_json(msg)
+            except Exception:
+                dead.add(ws)
+        self._ws_clients -= dead

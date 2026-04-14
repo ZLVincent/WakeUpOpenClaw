@@ -267,6 +267,11 @@ class VoiceAssistant:
         old_state = self._state
         self._state = new_state
         logger.info("状态切换: %s -> %s", old_state.value, new_state.value)
+        # 广播状态到 Web 客户端
+        if self.web_server and self.web_server._ws_clients:
+            asyncio.ensure_future(
+                self.web_server.broadcast_status(new_state.value)
+            )
 
     async def _play_sound(self, sound_path: str) -> None:
         """

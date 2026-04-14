@@ -4,13 +4,31 @@
 
 ## 功能概览
 
+**核心语音交互**
 - **语音唤醒**：支持 Snowboy 和 Picovoice Porcupine 两种引擎，通过配置文件切换
 - **语音识别**：对接 FunASR Docker 服务，支持 offline / online / 2pass 模式
-- **AI 对话**：调用 OpenClaw Agent CLI，支持多轮对话和自定义系统提示词
-- **语音合成**：使用 Edge TTS（微软），中文效果好，支持代理
+- **AI 对话**：调用 OpenClaw Agent CLI，支持单轮/多轮对话和自定义系统提示词
+- **语音合成**：使用 Edge TTS（微软），支持代理和流式分句合成
+- **语音打断**：TTS 播放期间可说唤醒词打断，直接进入新一轮对话
 - **提示音**：唤醒时播放 `beep_hi.wav`，录音结束播放 `beep_lo.wav`
-- **Web 界面**：提供浏览器聊天页面和配置管理页面，作为语音交互的备用方式
-- **全量可配**：所有参数通过 `config.yaml` 配置，支持 Web 页面在线修改
+
+**本地技能**
+- **关键词路由**：音量控制、停止播放、报时、新建对话等常用指令本地秒响应，不经过 AI
+- **音量控制**：通过语音指令调大/调小系统音量
+
+**Web 界面**
+- **文本聊天**：浏览器聊天页面，与语音共享同一个 Agent 会话
+- **实时状态**：WebSocket 推送助手状态（待唤醒/录音/思考/播放），页面顶部实时显示
+- **配置管理**：在线编辑 config.yaml，枚举字段渲染为下拉框
+- **OTA 更新**：检查 Git 更新、一键拉取并通过 Supervisor 重启
+
+**数据持久化**
+- **对话历史**：MySQL 存储所有语音和文本对话，支持查看历史、切换对话
+- **自动归档**：对话轮次超过阈值自动归档旧对话，开启新对话
+- **手动新建**：Web 按钮或语音指令"新对话"创建新会话
+
+**全量可配**
+- 所有参数通过 `config.yaml` 配置，支持 Web 页面在线修改
 
 ## 系统架构
 
@@ -26,19 +44,23 @@
                ▼ 识别结果
           [播放 beep_lo.wav]
                │
-               ▼
+          [本地技能匹配？]
+           ├─ 匹配 → 本地执行 + TTS 播报
+           └─ 不匹配 ↓
           [OpenClaw Agent 处理]
                │
-               ▼ AI 回复
+               ▼ AI 回复 → 保存到 MySQL
           [Edge TTS 语音合成 + 播放]
+            (支持分句流式 / 唤醒词打断)
                │
                ▼
           [回到唤醒词监听]
 
     同时运行:
           [Web 服务 :8084]
-            ├── /       聊天页面
-            └── /config 配置管理
+            ├── /         聊天页面 (实时状态)
+            ├── /config   配置管理 + OTA 更新
+            └── /ws/status WebSocket 状态推送
 ```
 
 ## 项目结构
@@ -56,16 +78,20 @@ WakeUpOpenClaw/
 ├── asr/
 │   └── funasr_client.py         # FunASR WebSocket 客户端
 ├── agent/
-│   └── openclaw_client.py       # OpenClaw CLI 调用封装
+│   └── openclaw_client.py       # OpenClaw CLI 调用封装（流式读取）
 ├── tts/
-│   └── edge_tts_engine.py       # Edge TTS 语音合成 + 播放
+│   └── edge_tts_engine.py       # Edge TTS 合成 + 播放 + 流式 + 打断
 ├── audio/
 │   └── recorder.py              # PyAudio 麦克风录音
+├── skills/
+│   └── router.py                # 本地技能路由（关键词匹配 + 内置动作）
+├── storage/
+│   └── database.py              # MySQL 对话历史持久化
 ├── web/                         # Web 界面
-│   ├── server.py                #   aiohttp 服务端
+│   ├── server.py                #   aiohttp 服务端（聊天/配置/OTA/WebSocket）
 │   └── templates/
-│       ├── chat.html            #   聊天页面
-│       └── config.html          #   配置管理页面
+│       ├── chat.html            #   聊天页面（含实时状态面板）
+│       └── config.html          #   配置管理 + 系统管理页面
 ├── utils/
 │   └── logger.py                # 彩色日志（终端 + 文件轮转）
 ├── static/                      # 提示音文件
@@ -83,7 +109,7 @@ WakeUpOpenClaw/
 - 树莓派 5（或其他 Linux ARM64 / x86_64 设备）
 - Python 3.9+
 - 麦克风 + 扬声器
-- Docker（运行 FunASR 服务）
+- Docker（运行 FunASR 服务和 MySQL）
 - OpenClaw 已安装并配置
 
 ## 快速部署
@@ -115,12 +141,9 @@ pip install -r requirements.txt
 ### 4. 编译 Snowboy（如果使用 Snowboy 引擎）
 
 ```bash
-# 克隆 Snowboy 源码
 git clone https://github.com/seasalt-ai/snowboy.git /tmp/snowboy
 cd /tmp/snowboy/swig/Python3
 make
-
-# 将编译产物复制到项目目录
 cp _snowboydetect.so snowboydetect.py ~/WakeUpOpenClaw/snowboy/
 ```
 
@@ -129,7 +152,6 @@ cp _snowboydetect.so snowboydetect.py ~/WakeUpOpenClaw/snowboy/
 ### 5. 部署 FunASR 服务
 
 ```bash
-# 离线识别服务（端口 10095）
 curl -O https://raw.githubusercontent.com/alibaba-damo-academy/FunASR/main/runtime/deploy_tools/funasr-runtime-deploy-offline-cpu-zh.sh
 sudo bash funasr-runtime-deploy-offline-cpu-zh.sh install --workspace ./funasr-runtime-resources
 ```
@@ -141,14 +163,17 @@ sudo bash funasr-runtime-deploy-offline-cpu-zh.sh install --workspace ./funasr-r
 ```yaml
 # 必须修改的配置
 asr:
-  server_url: "ws://localhost:10095"    # FunASR 地址
+  server_url: "ws://localhost:10095"
 
 tts:
-  proxy: "http://127.0.0.1:7890"       # 代理地址（不需要时设为 null）
+  proxy: "http://127.0.0.1:7890"       # 不需要代理时设为 null
 
-# 可选：如果使用 Porcupine
+database:
+  password: "your_mysql_password"
+
+# 可选
 wake_up:
-  engine: "porcupine"                   # 切换为 porcupine
+  engine: "porcupine"                   # 切换唤醒词引擎
   porcupine:
     access_key: "YOUR_KEY"
 ```
@@ -161,8 +186,20 @@ python main.py
 
 启动后：
 - 对着麦克风说唤醒词（默认 "snowboy"），听到 `beep` 提示音后开始说话
-- 浏览器访问 `http://<IP>:8084` 使用文本聊天
-- 浏览器访问 `http://<IP>:8084/config` 在线修改配置
+- 浏览器访问 `http://<IP>:8084` 使用文本聊天和查看实时状态
+- 浏览器访问 `http://<IP>:8084/config` 在线修改配置和管理系统
+
+### 8. Supervisor 部署（可选）
+
+```ini
+[program:WakeUpOpenClaw]
+command=/path/to/venv/bin/python main.py
+directory=/path/to/WakeUpOpenClaw
+autostart=true
+autorestart=true
+stderr_logfile=/var/log/wakeup-openclaw.err.log
+stdout_logfile=/var/log/wakeup-openclaw.out.log
+```
 
 ## 配置说明
 
@@ -185,6 +222,20 @@ conversation:
   # mode: "multi"  # 唤醒 → 说话 → AI回复 → 等待继续 → ... → 超时回到待唤醒
 ```
 
+### 语音打断（Barge-in）
+
+```yaml
+conversation:
+  barge_in: true     # TTS 播放期间说唤醒词可打断
+```
+
+### 流式 TTS
+
+```yaml
+conversation:
+  streaming_tts: true  # 长回复分句合成，边合成边播放，降低首字延迟
+```
+
 ### VAD 端点检测调优
 
 ```yaml
@@ -195,11 +246,28 @@ conversation:
 
 ### TTS 代理
 
-Edge TTS 需要访问 `speech.platform.bing.com`，如需代理：
-
 ```yaml
 tts:
   proxy: "http://127.0.0.1:7890"    # 或 socks5://...
+```
+
+### 本地技能
+
+在 AI 之前匹配关键词，命中则本地执行：
+
+```yaml
+skills:
+  enabled: true
+  commands:
+    - keywords: ["大声一点", "音量调大"]
+      action: "volume_up"
+      reply: "好的，已调大音量"
+    - keywords: ["停止播放", "安静"]
+      action: "stop_playback"
+    - keywords: ["现在几点", "报时"]
+      action: "current_time"
+    - keywords: ["新对话", "重新开始"]
+      action: "new_conversation"
 ```
 
 ### 系统提示词
@@ -212,12 +280,39 @@ agent:
     你是一个语音助手...用纯文本回复，不要使用 Markdown...
 ```
 
+### 对话历史
+
+```yaml
+database:
+  host: "localhost"
+  port: 3306
+  user: "root"
+  password: "your_password"
+  database: "wakeup_openclaw"
+
+conversation:
+  max_history_rounds: 30    # 超过后自动归档旧对话
+```
+
 ## Web 界面
 
 | 页面 | 地址 | 功能 |
 |------|------|------|
-| 聊天 | `http://<IP>:8084/` | 文本对话，与语音共享同一个 Agent 会话 |
-| 配置 | `http://<IP>:8084/config` | 在线编辑 config.yaml，保存后部分配置需重启生效 |
+| 聊天 | `http://<IP>:8084/` | 文本对话 + 对话历史 + 实时状态指示器 |
+| 配置 | `http://<IP>:8084/config` | 在线编辑 config + 检查更新 + 重启服务 |
+
+### 聊天页面
+
+- 左侧对话列表，点击切换历史对话
+- "新对话"按钮创建新会话
+- 顶部实时状态点：绿色(待唤醒) / 蓝色(录音) / 橙色(思考) / 红色(播放)
+- 消息标注来源（voice / web）
+
+### 配置页面
+
+- 按段折叠显示所有配置
+- 枚举字段渲染为下拉框
+- 底部系统管理：当前版本、检查更新、拉取更新并重启、仅重启
 
 ## 日志
 

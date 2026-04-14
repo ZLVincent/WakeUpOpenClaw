@@ -33,6 +33,7 @@ from audio.recorder import AudioRecorder
 from skills.router import SkillRouter
 from storage.database import ChatDatabase
 from tts.edge_tts_engine import EdgeTTSEngine
+from utils.config_resolver import resolve_config
 from utils.logger import get_logger, setup_logging
 from wake_up.factory import create_detector
 from web.server import WebServer
@@ -767,9 +768,12 @@ def main():
     # 加载配置
     config = load_config(config_path)
 
-    # 初始化日志
+    # 初始化日志（在解析环境变量前，确保日志系统可用）
     log_cfg = config.get("logging", {})
     setup_logging(log_cfg)
+
+    # 解析配置中的 ${ENV_VAR} 引用
+    config = resolve_config(config)
 
     logger.info("配置文件已加载: %s", config_path)
 

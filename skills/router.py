@@ -8,7 +8,10 @@
 import asyncio
 import datetime
 from dataclasses import dataclass, field
-from typing import Callable, Optional
+from typing import Callable, Optional, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from storage.database import ChatDatabase
 
 from utils.logger import get_logger
 
@@ -44,10 +47,14 @@ class SkillRouter:
         技能指令配置列表
     enabled : bool
         是否启用技能路由
+    database : ChatDatabase | None
+        数据库实例，用于日程查询
     """
 
-    def __init__(self, commands: list[dict] = None, enabled: bool = True):
+    def __init__(self, commands: list[dict] = None, enabled: bool = True,
+                 database=None):
         self.enabled = enabled
+        self.db = database
         self.commands: list[SkillCommand] = []
         self._action_handlers: dict[str, Callable] = {}
 
@@ -75,6 +82,8 @@ class SkillRouter:
             "stop_playback": self._action_stop_playback,
             "current_time": self._action_current_time,
             "new_conversation": self._action_new_conversation,
+            "query_today_events": self._action_query_today_events,
+            "query_tomorrow_events": self._action_query_tomorrow_events,
         }
 
     async def match(self, text: str) -> Optional[SkillResult]:
@@ -187,3 +196,47 @@ class SkillRouter:
             text=cmd.reply or "好的，已开启新对话",
             action="new_conversation",
         )
+
+    async def _action_query_today_events(self, cmd: SkillCommand) -> SkillResult:
+        """查询今天的日程。"""
+        return await self._query_events_for_date(
+            datetime.date.today(), "今天"
+        )
+
+    async def _action_query_tomorrow_events(self, cmd: SkillCommand) -> SkillResult:
+        """查询明天的日程。"""
+        return await self._query_events_for_date(
+            datetime.date.today() + datetime.timedelta(days=1), "明天"
+        )
+
+    async def _query_events_for_date(
+        self, date: datetime.date, label: str
+    ) -> SkillResult:
+        """查询指定日期的日程并生成语音回复。"""
+        if not self.db:
+            return SkillResult(text="日程功能暂不可用", action="query_events")
+
+        try:
+            events = await self.db.get_events_by_date(date.strftime("%Y-%m-%d"))
+        except Exception as e:
+            logger.warning("查询日程失败: %s", e)
+            return SkillResult(text="查询日程时出错了", action="query_events")
+
+        if not events:
+            return SkillResult(
+                text=f"{label}没有日程安排",
+                action="query_events",
+            )
+
+        parts = []
+        for ev in events:
+            if ev.get("all_day"):
+                parts.append(f"全天，{ev['title']}")
+            elif ev.get("start_time"):
+                t = ev["start_time"]
+                parts.append(f"{t}，{ev['title']}")
+            else:
+                parts.append(ev["title"])
+
+        reply = f"{label}有{len(events)}个日程：" + "；".join(parts)
+        return SkillResult(text=reply, action="query_events")

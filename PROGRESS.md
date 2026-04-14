@@ -66,6 +66,7 @@
 | 服务重启 | done | supervisorctl restart WakeUpOpenClaw |
 | Web 音量控制 | done | 聊天页侧边栏底部滑块，amixer 控制系统音量 |
 | Web 日志查看 | done | /logs 页面，读取日志文件，级别/模块过滤，关键词搜索高亮，自动刷新 |
+| Web 日程日历 | done | /calendar 页面，7/14天列表视图，日程增删改查，颜色分类，周末高亮 |
 
 ### 第五阶段：安全与运维（已完成）
 
@@ -73,6 +74,18 @@
 |------|------|------|
 | 配置敏感值加密 | done | `${ENV_VAR}` 语法引用环境变量，密码不入 git |
 | Web 配置安全 | done | 页面显示 `${VAR}` 原始文本，不暴露实际密码 |
+
+### 第六阶段：日程管理（已完成）
+
+| 功能 | 状态 | 说明 |
+|------|------|------|
+| events 数据表 | done | MySQL 自动建表，title/date/time/color/category/remind 等字段 |
+| 日程 CRUD API | done | GET/POST/PUT/DELETE /api/events |
+| 日程日历页面 | done | 7/14 天视图，左右翻页，周末紫色，今天红色，点击新建/编辑 |
+| 日程颜色分类 | done | 8 种预设颜色，日程块左边框着色 |
+| 语音日程查询 | done | "今天有什么安排"/"明天有什么事" 本地技能匹配 |
+| 日程提醒 (TTS) | done | 后台每 60s 检查，提前 N 分钟 TTS 语音播报，受免打扰限制 |
+| 日程提醒 (微信) | done | 通过 OpenClaw --deliver --channel wechat 发送，不受免打扰限制 |
 
 ---
 

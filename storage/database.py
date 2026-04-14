@@ -1,11 +1,12 @@
 """
-对话历史持久化模块 — MySQL 存储
+数据持久化模块 — MySQL 存储
 
 使用 aiomysql 异步连接池，自动建库建表。
-存储对话会话和消息记录，支持对话归档和新建。
+存储对话会话、消息记录和日程事件。
 """
 
 import asyncio
+import datetime
 import time
 import uuid
 from typing import Optional
@@ -43,6 +44,26 @@ CREATE TABLE IF NOT EXISTS messages (
     created_at      DATETIME DEFAULT CURRENT_TIMESTAMP,
     INDEX idx_conversation_id (conversation_id),
     FOREIGN KEY (conversation_id) REFERENCES conversations(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+"""
+
+_CREATE_EVENTS_TABLE = """
+CREATE TABLE IF NOT EXISTS events (
+    id              BIGINT AUTO_INCREMENT PRIMARY KEY,
+    title           VARCHAR(200) NOT NULL,
+    description     TEXT DEFAULT '',
+    date            DATE NOT NULL,
+    start_time      TIME DEFAULT NULL,
+    end_time        TIME DEFAULT NULL,
+    all_day         TINYINT(1) DEFAULT 0,
+    color           VARCHAR(20) DEFAULT '#0f3460',
+    category        VARCHAR(50) DEFAULT '',
+    remind_minutes  INT DEFAULT 5,
+    reminded        TINYINT(1) DEFAULT 0,
+    created_at      DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at      DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    INDEX idx_date (date),
+    INDEX idx_remind (date, start_time, reminded, remind_minutes)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 """
 
@@ -124,6 +145,7 @@ class ChatDatabase:
             async with conn.cursor() as cur:
                 await cur.execute(_CREATE_CONVERSATIONS_TABLE)
                 await cur.execute(_CREATE_MESSAGES_TABLE)
+                await cur.execute(_CREATE_EVENTS_TABLE)
         logger.info("数据表已就绪")
 
     async def close(self) -> None:
@@ -343,3 +365,138 @@ class ChatDatabase:
             "source": source,
             "is_active": 1,
         }
+
+    # ------------------------------------------------------------------
+    # 日程事件管理
+    # ------------------------------------------------------------------
+
+    def _format_event_row(self, row: dict) -> dict:
+        """格式化日程查询结果的日期/时间字段为字符串。"""
+        for k in ("created_at", "updated_at"):
+            if row.get(k) and isinstance(row[k], datetime.datetime):
+                row[k] = row[k].strftime("%Y-%m-%d %H:%M:%S")
+        if row.get("date") and isinstance(row["date"], datetime.date):
+            row["date"] = row["date"].strftime("%Y-%m-%d")
+        for k in ("start_time", "end_time"):
+            if row.get(k) and isinstance(row[k], datetime.timedelta):
+                total_sec = int(row[k].total_seconds())
+                hours, remainder = divmod(total_sec, 3600)
+                minutes, _ = divmod(remainder, 60)
+                row[k] = f"{hours:02d}:{minutes:02d}"
+            elif row.get(k) and isinstance(row[k], datetime.time):
+                row[k] = row[k].strftime("%H:%M")
+            elif row.get(k) is None:
+                row[k] = None
+        return row
+
+    async def create_event(
+        self,
+        title: str,
+        date: str,
+        start_time: str = None,
+        end_time: str = None,
+        all_day: bool = False,
+        color: str = "#0f3460",
+        category: str = "",
+        description: str = "",
+        remind_minutes: int = 5,
+    ) -> int:
+        """创建日程事件，返回事件 ID。"""
+        async with self._pool.acquire() as conn:
+            async with conn.cursor() as cur:
+                await cur.execute(
+                    "INSERT INTO events "
+                    "(title, description, date, start_time, end_time, all_day, "
+                    "color, category, remind_minutes) "
+                    "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)",
+                    (title, description, date, start_time, end_time,
+                     1 if all_day else 0, color, category, remind_minutes),
+                )
+                event_id = cur.lastrowid
+        logger.info("新建日程 #%d: %s (%s)", event_id, title, date)
+        return event_id
+
+    async def update_event(self, event_id: int, **fields) -> None:
+        """更新日程事件。只更新传入的字段。"""
+        if not fields:
+            return
+        set_parts = []
+        values = []
+        allowed = {
+            "title", "description", "date", "start_time", "end_time",
+            "all_day", "color", "category", "remind_minutes", "reminded",
+        }
+        for k, v in fields.items():
+            if k in allowed:
+                set_parts.append(f"{k} = %s")
+                values.append(v)
+        if not set_parts:
+            return
+        values.append(event_id)
+        sql = f"UPDATE events SET {', '.join(set_parts)} WHERE id = %s"
+        async with self._pool.acquire() as conn:
+            async with conn.cursor() as cur:
+                await cur.execute(sql, tuple(values))
+        logger.info("更新日程 #%d: %s", event_id, list(fields.keys()))
+
+    async def delete_event(self, event_id: int) -> None:
+        """删除日程事件。"""
+        async with self._pool.acquire() as conn:
+            async with conn.cursor() as cur:
+                await cur.execute("DELETE FROM events WHERE id = %s", (event_id,))
+        logger.info("删除日程 #%d", event_id)
+
+    async def get_event(self, event_id: int) -> Optional[dict]:
+        """获取单个日程事件。"""
+        async with self._pool.acquire() as conn:
+            async with conn.cursor(aiomysql.DictCursor) as cur:
+                await cur.execute("SELECT * FROM events WHERE id = %s", (event_id,))
+                row = await cur.fetchone()
+                return self._format_event_row(row) if row else None
+
+    async def get_events_by_range(self, start: str, end: str) -> list:
+        """获取日期范围内的日程列表。"""
+        async with self._pool.acquire() as conn:
+            async with conn.cursor(aiomysql.DictCursor) as cur:
+                await cur.execute(
+                    "SELECT * FROM events WHERE date >= %s AND date <= %s "
+                    "ORDER BY date ASC, all_day DESC, start_time ASC",
+                    (start, end),
+                )
+                rows = await cur.fetchall()
+                return [self._format_event_row(r) for r in rows]
+
+    async def get_events_by_date(self, date: str) -> list:
+        """获取某一天的日程列表。"""
+        return await self.get_events_by_range(date, date)
+
+    async def get_upcoming_reminders(self) -> list:
+        """获取需要提醒的即将到来的日程。"""
+        now = datetime.datetime.now()
+        today = now.strftime("%Y-%m-%d")
+        current_time = now.strftime("%H:%M:%S")
+        async with self._pool.acquire() as conn:
+            async with conn.cursor(aiomysql.DictCursor) as cur:
+                await cur.execute(
+                    "SELECT * FROM events "
+                    "WHERE date = %s AND reminded = 0 AND remind_minutes > 0 "
+                    "AND all_day = 0 AND start_time IS NOT NULL "
+                    "AND SUBTIME(start_time, SEC_TO_TIME(remind_minutes * 60)) <= %s",
+                    (today, current_time),
+                )
+                rows = await cur.fetchall()
+                return [self._format_event_row(r) for r in rows]
+
+    async def mark_event_reminded(self, event_id: int) -> None:
+        """标记日程已提醒。"""
+        await self.update_event(event_id, reminded=1)
+
+    async def reset_daily_reminders(self) -> None:
+        """重置今天所有事件的提醒状态。"""
+        today = datetime.date.today().strftime("%Y-%m-%d")
+        async with self._pool.acquire() as conn:
+            async with conn.cursor() as cur:
+                await cur.execute(
+                    "UPDATE events SET reminded = 0 WHERE date = %s",
+                    (today,),
+                )

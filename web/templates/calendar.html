@@ -1,0 +1,482 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>日程 - WakeUpOpenClaw</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    background: #1a1a2e;
+    color: #e0e0e0;
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+  }
+  header {
+    background: #16213e;
+    padding: 12px 20px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    border-bottom: 1px solid #0f3460;
+    flex-shrink: 0;
+  }
+  header h1 { font-size: 18px; color: #e94560; }
+  nav { display: flex; gap: 12px; align-items: center; }
+  nav a {
+    color: #888; text-decoration: none; font-size: 13px;
+    padding: 4px 10px; border-radius: 4px; transition: all 0.2s;
+  }
+  nav a:hover, nav a.active { color: #e94560; background: #1a1a2e; }
+
+  .toolbar {
+    background: #16213e;
+    padding: 10px 16px;
+    display: flex; flex-wrap: wrap; gap: 10px; align-items: center;
+    border-bottom: 1px solid #0f3460; flex-shrink: 0;
+  }
+  .toolbar button {
+    padding: 6px 14px; border: none; border-radius: 4px;
+    font-size: 13px; cursor: pointer; background: #0f3460; color: #ccc;
+    transition: background 0.2s;
+  }
+  .toolbar button:hover { background: #1a4a8a; }
+  .toolbar .btn-add { background: #e94560; color: #fff; }
+  .toolbar .btn-add:hover { background: #c73e54; }
+  .toolbar .nav-label { font-size: 14px; min-width: 200px; text-align: center; }
+  .toolbar .view-toggle { display: flex; gap: 2px; }
+  .toolbar .view-toggle button.active { background: #e94560; color: #fff; }
+
+  /* 日历网格 */
+  .calendar {
+    flex: 1; display: grid; overflow-x: auto; padding: 0;
+    gap: 1px; background: #111;
+  }
+  .day-col {
+    background: #1a1a2e; min-width: 120px; display: flex; flex-direction: column;
+  }
+  .day-header {
+    padding: 8px 10px; text-align: center; font-size: 13px;
+    border-bottom: 1px solid #0f3460; position: sticky; top: 0;
+    background: #16213e; z-index: 2;
+  }
+  .day-header .weekday { font-size: 11px; color: #888; }
+  .day-header .date-num { font-size: 18px; font-weight: bold; margin-top: 2px; }
+  .day-header.today { background: #0f3460; }
+  .day-header.today .date-num { color: #e94560; }
+  .day-header.weekend { background: #1a1040; }
+  .day-header.weekend .weekday { color: #9575cd; }
+  .day-events {
+    flex: 1; padding: 4px; display: flex; flex-direction: column; gap: 4px;
+    min-height: 200px; cursor: pointer;
+  }
+  .event-card {
+    padding: 6px 8px; border-radius: 4px; font-size: 12px;
+    cursor: pointer; transition: opacity 0.15s; position: relative;
+    border-left: 3px solid;
+  }
+  .event-card:hover { opacity: 0.85; }
+  .event-card .ev-time { font-size: 10px; opacity: 0.7; }
+  .event-card .ev-title { margin-top: 2px; font-weight: 500; }
+  .event-card .ev-del {
+    position: absolute; top: 2px; right: 4px; display: none;
+    background: none; border: none; color: #aaa; cursor: pointer;
+    font-size: 14px; line-height: 1; padding: 2px;
+  }
+  .event-card:hover .ev-del { display: block; }
+  .event-card .ev-del:hover { color: #e94560; }
+
+  /* 弹窗 */
+  .modal-overlay {
+    display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.6);
+    z-index: 100; justify-content: center; align-items: center;
+  }
+  .modal-overlay.show { display: flex; }
+  .modal {
+    background: #16213e; border: 1px solid #0f3460; border-radius: 10px;
+    padding: 24px; width: 400px; max-width: 95vw; max-height: 90vh;
+    overflow-y: auto;
+  }
+  .modal h3 { font-size: 16px; color: #e94560; margin-bottom: 16px; }
+  .modal .field { margin-bottom: 12px; }
+  .modal .field label { display: block; font-size: 12px; color: #888; margin-bottom: 4px; }
+  .modal .field input, .modal .field textarea, .modal .field select {
+    width: 100%; padding: 8px 10px; border: 1px solid #333; border-radius: 4px;
+    background: #1a1a2e; color: #e0e0e0; font-size: 13px; outline: none;
+  }
+  .modal .field input:focus, .modal .field select:focus { border-color: #e94560; }
+  .modal .field textarea { min-height: 60px; resize: vertical; font-family: inherit; }
+  .modal .field-row { display: flex; gap: 10px; }
+  .modal .field-row .field { flex: 1; }
+  .modal .actions { display: flex; gap: 10px; justify-content: flex-end; margin-top: 16px; }
+  .modal .actions button {
+    padding: 8px 20px; border: none; border-radius: 6px;
+    font-size: 13px; cursor: pointer;
+  }
+  .modal .btn-save { background: #e94560; color: #fff; }
+  .modal .btn-save:hover { background: #c73e54; }
+  .modal .btn-cancel { background: #333; color: #ccc; }
+  .modal .btn-cancel:hover { background: #444; }
+  .modal .btn-delete { background: #5a0000; color: #f28b82; }
+  .modal .btn-delete:hover { background: #7a0000; }
+  .color-picker { display: flex; gap: 6px; flex-wrap: wrap; }
+  .color-opt {
+    width: 24px; height: 24px; border-radius: 50%; cursor: pointer;
+    border: 2px solid transparent; transition: border-color 0.15s;
+  }
+  .color-opt:hover, .color-opt.selected { border-color: #fff; }
+
+  .toast {
+    position: fixed; top: 60px; right: 20px; padding: 10px 20px;
+    border-radius: 6px; font-size: 13px; z-index: 200; opacity: 0;
+    transition: opacity 0.3s; pointer-events: none;
+  }
+  .toast.show { opacity: 1; }
+  .toast.success { background: #1b4332; color: #95d5b2; border: 1px solid #2d6a4f; }
+  .toast.error { background: #3d0000; color: #f28b82; border: 1px solid #5a0000; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>WakeUpOpenClaw</h1>
+  <nav>
+    <a href="/">聊天</a>
+    <a href="/config">配置</a>
+    <a href="/logs">日志</a>
+    <a href="/calendar" class="active">日程</a>
+  </nav>
+</header>
+
+<div class="toolbar">
+  <button onclick="navigatePrev()">&lt; 上一周</button>
+  <span class="nav-label" id="range-label">加载中...</span>
+  <button onclick="navigateNext()">下一周 &gt;</button>
+  <button onclick="navigateToday()">今天</button>
+  <div class="view-toggle">
+    <button id="btn-7d" class="active" onclick="setView(7)">7天</button>
+    <button id="btn-14d" onclick="setView(14)">14天</button>
+  </div>
+  <button class="btn-add" onclick="openCreateModal()">+ 新日程</button>
+</div>
+
+<div class="calendar" id="calendar"></div>
+
+<!-- 弹窗 -->
+<div class="modal-overlay" id="modal-overlay" onclick="closeModal(event)">
+  <div class="modal" onclick="event.stopPropagation()">
+    <h3 id="modal-title">新建日程</h3>
+    <div class="field">
+      <label>标题</label>
+      <input type="text" id="ev-title" placeholder="日程标题">
+    </div>
+    <div class="field-row">
+      <div class="field">
+        <label>日期</label>
+        <input type="date" id="ev-date">
+      </div>
+      <div class="field">
+        <label>
+          <input type="checkbox" id="ev-allday" onchange="toggleAllDay()"> 全天
+        </label>
+      </div>
+    </div>
+    <div class="field-row" id="time-fields">
+      <div class="field">
+        <label>开始时间</label>
+        <input type="time" id="ev-start">
+      </div>
+      <div class="field">
+        <label>结束时间</label>
+        <input type="time" id="ev-end">
+      </div>
+    </div>
+    <div class="field">
+      <label>分类</label>
+      <select id="ev-category">
+        <option value="">无</option>
+        <option value="工作">工作</option>
+        <option value="生活">生活</option>
+        <option value="会议">会议</option>
+        <option value="提醒">提醒</option>
+      </select>
+    </div>
+    <div class="field">
+      <label>提前提醒</label>
+      <select id="ev-remind">
+        <option value="0">不提醒</option>
+        <option value="5" selected>5 分钟</option>
+        <option value="10">10 分钟</option>
+        <option value="15">15 分钟</option>
+        <option value="30">30 分钟</option>
+        <option value="60">1 小时</option>
+      </select>
+    </div>
+    <div class="field">
+      <label>颜色</label>
+      <div class="color-picker" id="color-picker"></div>
+    </div>
+    <div class="field">
+      <label>备注</label>
+      <textarea id="ev-desc" placeholder="可选"></textarea>
+    </div>
+    <div class="actions">
+      <button class="btn-delete" id="btn-del-event" style="display:none" onclick="deleteEvent()">删除</button>
+      <span style="flex:1"></span>
+      <button class="btn-cancel" onclick="hideModal()">取消</button>
+      <button class="btn-save" onclick="saveEvent()">保存</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+const calendarEl = document.getElementById('calendar');
+const WEEKDAYS = ['周日','周一','周二','周三','周四','周五','周六'];
+const COLORS = ['#0f3460','#e94560','#4caf50','#ff9800','#2196f3','#9c27b0','#00bcd4','#795548'];
+
+let viewDays = 7;
+let startDate = getMonday(new Date());
+let allEvents = [];
+let editingEventId = null;
+let selectedColor = COLORS[0];
+
+// 初始化颜色选择器
+const cpEl = document.getElementById('color-picker');
+COLORS.forEach(c => {
+  const d = document.createElement('div');
+  d.className = 'color-opt' + (c === selectedColor ? ' selected' : '');
+  d.style.background = c;
+  d.onclick = () => {
+    cpEl.querySelectorAll('.color-opt').forEach(x => x.classList.remove('selected'));
+    d.classList.add('selected');
+    selectedColor = c;
+  };
+  cpEl.appendChild(d);
+});
+
+function getMonday(d) {
+  d = new Date(d);
+  const day = d.getDay();
+  const diff = d.getDate() - day + (day === 0 ? -6 : 1);
+  return new Date(d.setDate(diff));
+}
+
+function addDays(d, n) { const r = new Date(d); r.setDate(r.getDate() + n); return r; }
+function toISO(d) { return d.toISOString().split('T')[0]; }
+function isToday(d) { return toISO(d) === toISO(new Date()); }
+function isWeekend(d) { const day = d.getDay(); return day === 0 || day === 6; }
+
+function showToast(msg, type) {
+  const t = document.getElementById('toast');
+  t.textContent = msg; t.className = 'toast show ' + type;
+  setTimeout(() => t.className = 'toast', 3000);
+}
+
+function updateLabel() {
+  const end = addDays(startDate, viewDays - 1);
+  const fmt = d => `${d.getMonth()+1}月${d.getDate()}日`;
+  document.getElementById('range-label').textContent = `${startDate.getFullYear()}年 ${fmt(startDate)} - ${fmt(end)}`;
+}
+
+function setView(days) {
+  viewDays = days;
+  document.getElementById('btn-7d').className = days === 7 ? 'active' : '';
+  document.getElementById('btn-14d').className = days === 14 ? 'active' : '';
+  loadEvents();
+}
+
+function navigatePrev() { startDate = addDays(startDate, -viewDays); loadEvents(); }
+function navigateNext() { startDate = addDays(startDate, viewDays); loadEvents(); }
+function navigateToday() { startDate = getMonday(new Date()); loadEvents(); }
+
+function renderCalendar() {
+  updateLabel();
+  calendarEl.style.gridTemplateColumns = `repeat(${viewDays}, 1fr)`;
+  calendarEl.innerHTML = '';
+
+  for (let i = 0; i < viewDays; i++) {
+    const d = addDays(startDate, i);
+    const dateStr = toISO(d);
+    const col = document.createElement('div');
+    col.className = 'day-col';
+
+    // 日期头
+    const hdr = document.createElement('div');
+    hdr.className = 'day-header';
+    if (isToday(d)) hdr.classList.add('today');
+    if (isWeekend(d)) hdr.classList.add('weekend');
+    hdr.innerHTML = `<div class="weekday">${WEEKDAYS[d.getDay()]}</div><div class="date-num">${d.getDate()}</div>`;
+    col.appendChild(hdr);
+
+    // 日程列表
+    const evContainer = document.createElement('div');
+    evContainer.className = 'day-events';
+    evContainer.onclick = (e) => {
+      if (e.target.closest('.event-card')) return;
+      openCreateModal(dateStr);
+    };
+
+    const dayEvents = allEvents.filter(ev => ev.date === dateStr);
+    for (const ev of dayEvents) {
+      const card = document.createElement('div');
+      card.className = 'event-card';
+      card.style.background = (ev.color || '#0f3460') + '22';
+      card.style.borderLeftColor = ev.color || '#0f3460';
+
+      let timeStr = '';
+      if (ev.all_day) { timeStr = '全天'; }
+      else if (ev.start_time) {
+        timeStr = ev.start_time;
+        if (ev.end_time) timeStr += ' - ' + ev.end_time;
+      }
+
+      card.innerHTML =
+        (timeStr ? `<div class="ev-time">${timeStr}</div>` : '') +
+        `<div class="ev-title">${escapeHtml(ev.title)}</div>` +
+        `<button class="ev-del" title="删除">&times;</button>`;
+
+      card.querySelector('.ev-del').onclick = (e) => {
+        e.stopPropagation();
+        quickDelete(ev.id, ev.title);
+      };
+      card.onclick = (e) => {
+        e.stopPropagation();
+        openEditModal(ev);
+      };
+      evContainer.appendChild(card);
+    }
+    col.appendChild(evContainer);
+    calendarEl.appendChild(col);
+  }
+}
+
+async function loadEvents() {
+  const end = addDays(startDate, viewDays - 1);
+  try {
+    const res = await fetch(`/api/events?start=${toISO(startDate)}&end=${toISO(end)}`);
+    const data = await res.json();
+    allEvents = data.events || [];
+    renderCalendar();
+  } catch(e) {
+    showToast('加载日程失败', 'error');
+  }
+}
+
+// 弹窗控制
+function showModal() { document.getElementById('modal-overlay').classList.add('show'); }
+function hideModal() { document.getElementById('modal-overlay').classList.remove('show'); editingEventId = null; }
+function closeModal(e) { if (e.target === document.getElementById('modal-overlay')) hideModal(); }
+function toggleAllDay() {
+  document.getElementById('time-fields').style.display =
+    document.getElementById('ev-allday').checked ? 'none' : 'flex';
+}
+
+function openCreateModal(dateStr) {
+  editingEventId = null;
+  document.getElementById('modal-title').textContent = '新建日程';
+  document.getElementById('ev-title').value = '';
+  document.getElementById('ev-date').value = dateStr || toISO(new Date());
+  document.getElementById('ev-allday').checked = false;
+  document.getElementById('ev-start').value = '';
+  document.getElementById('ev-end').value = '';
+  document.getElementById('ev-category').value = '';
+  document.getElementById('ev-remind').value = '5';
+  document.getElementById('ev-desc').value = '';
+  document.getElementById('btn-del-event').style.display = 'none';
+  document.getElementById('time-fields').style.display = 'flex';
+  selectColor(COLORS[0]);
+  showModal();
+  document.getElementById('ev-title').focus();
+}
+
+function openEditModal(ev) {
+  editingEventId = ev.id;
+  document.getElementById('modal-title').textContent = '编辑日程';
+  document.getElementById('ev-title').value = ev.title || '';
+  document.getElementById('ev-date').value = ev.date || '';
+  document.getElementById('ev-allday').checked = !!ev.all_day;
+  document.getElementById('ev-start').value = ev.start_time || '';
+  document.getElementById('ev-end').value = ev.end_time || '';
+  document.getElementById('ev-category').value = ev.category || '';
+  document.getElementById('ev-remind').value = String(ev.remind_minutes || 0);
+  document.getElementById('ev-desc').value = ev.description || '';
+  document.getElementById('btn-del-event').style.display = 'inline-block';
+  document.getElementById('time-fields').style.display = ev.all_day ? 'none' : 'flex';
+  selectColor(ev.color || COLORS[0]);
+  showModal();
+}
+
+function selectColor(c) {
+  selectedColor = c;
+  cpEl.querySelectorAll('.color-opt').forEach(el => {
+    el.classList.toggle('selected', el.style.background === c || rgbToHex(el.style.background) === c);
+  });
+}
+
+function rgbToHex(rgb) {
+  if (rgb.startsWith('#')) return rgb;
+  const m = rgb.match(/\d+/g);
+  if (!m || m.length < 3) return rgb;
+  return '#' + m.slice(0,3).map(x => parseInt(x).toString(16).padStart(2,'0')).join('');
+}
+
+async function saveEvent() {
+  const data = {
+    title: document.getElementById('ev-title').value.trim(),
+    date: document.getElementById('ev-date').value,
+    all_day: document.getElementById('ev-allday').checked,
+    start_time: document.getElementById('ev-allday').checked ? null : (document.getElementById('ev-start').value || null),
+    end_time: document.getElementById('ev-allday').checked ? null : (document.getElementById('ev-end').value || null),
+    category: document.getElementById('ev-category').value,
+    remind_minutes: parseInt(document.getElementById('ev-remind').value) || 0,
+    color: selectedColor,
+    description: document.getElementById('ev-desc').value.trim(),
+  };
+  if (!data.title) { showToast('请输入标题', 'error'); return; }
+  if (!data.date) { showToast('请选择日期', 'error'); return; }
+
+  try {
+    const url = editingEventId ? `/api/events/${editingEventId}` : '/api/events';
+    const method = editingEventId ? 'PUT' : 'POST';
+    const res = await fetch(url, {
+      method, headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify(data),
+    });
+    const result = await res.json();
+    if (result.error) { showToast(result.error, 'error'); return; }
+    hideModal();
+    showToast(editingEventId ? '日程已更新' : '日程已创建', 'success');
+    loadEvents();
+  } catch(e) { showToast('保存失败', 'error'); }
+}
+
+async function deleteEvent() {
+  if (!editingEventId) return;
+  if (!confirm('确定删除此日程？')) return;
+  try {
+    await fetch(`/api/events/${editingEventId}`, {method: 'DELETE'});
+    hideModal();
+    showToast('日程已删除', 'success');
+    loadEvents();
+  } catch(e) { showToast('删除失败', 'error'); }
+}
+
+async function quickDelete(id, title) {
+  if (!confirm(`确定删除「${title}」？`)) return;
+  try {
+    await fetch(`/api/events/${id}`, {method: 'DELETE'});
+    showToast('已删除', 'success');
+    loadEvents();
+  } catch(e) { showToast('删除失败', 'error'); }
+}
+
+function escapeHtml(t) { const d = document.createElement('div'); d.textContent = t; return d.innerHTML; }
+
+loadEvents();
+</script>
+</body>
+</html>

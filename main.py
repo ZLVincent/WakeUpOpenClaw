@@ -268,7 +268,14 @@ class VoiceAssistant:
         self.skill_router = SkillRouter(
             commands=skills_cfg.get("commands", []),
             enabled=skills_cfg.get("enabled", True),
+            database=self.db,
         )
+
+        # 日程提醒配置
+        cal_cfg = config.get("calendar", {})
+        self.remind_enabled = cal_cfg.get("remind_enabled", True)
+        self.remind_check_interval = cal_cfg.get("remind_check_interval", 60)
+        self.wechat_remind_cfg = cal_cfg.get("wechat_remind", {})
 
     def _set_state(self, new_state: State) -> None:
         """切换状态并记录日志。"""
@@ -402,6 +409,12 @@ class VoiceAssistant:
     async def run(self) -> None:
         """运行主循环。"""
         self._running = True
+
+        # 启动日程提醒后台任务
+        reminder_task = None
+        if self.remind_enabled:
+            reminder_task = asyncio.create_task(self._reminder_loop())
+            logger.info("日程提醒后台任务已启动 (间隔: %ds)", self.remind_check_interval)
 
         while self._running:
             try:
@@ -695,6 +708,69 @@ class VoiceAssistant:
             self.tts_engine._remove_file(audio_file)
 
         return barged
+
+    async def _reminder_loop(self) -> None:
+        """
+        日程提醒后台循环。
+
+        每隔 remind_check_interval 秒检查一次即将到来的日程，
+        通过 TTS 语音播报（免打扰时段内跳过语音但仍发微信）。
+        """
+        while self._running:
+            try:
+                events = await self.db.get_upcoming_reminders()
+                for ev in events:
+                    title = ev.get("title", "")
+                    remind_min = ev.get("remind_minutes", 5)
+                    msg = f"提醒您，{remind_min}分钟后有日程：{title}"
+
+                    logger.info("日程提醒: %s", msg)
+
+                    # TTS 语音播报（受免打扰限制）
+                    if not self._is_dnd_active():
+                        await self.tts_engine.speak(msg)
+
+                    # 微信提醒（不受免打扰限制）
+                    await self._send_wechat_remind(msg)
+
+                    # 标记已提醒
+                    await self.db.mark_event_reminded(ev["id"])
+
+            except Exception as e:
+                logger.debug("提醒循环出错: %s", e)
+
+            await asyncio.sleep(self.remind_check_interval)
+
+    async def _send_wechat_remind(self, message: str) -> None:
+        """通过 OpenClaw channel 发送微信提醒消息。"""
+        cfg = self.wechat_remind_cfg
+        if not cfg.get("enabled", False):
+            return
+
+        to = cfg.get("to", "")
+        channel = cfg.get("channel", "wechat")
+        if not to:
+            logger.warning("微信提醒未配置 to 参数，跳过")
+            return
+
+        cmd = [
+            self.agent_client.cli_path,
+            "agent",
+            "--to", to,
+            "--channel", channel,
+            "--message", message,
+            "--deliver",
+        ]
+        logger.info("发送微信提醒: %s", message[:50])
+        try:
+            proc = await asyncio.create_subprocess_exec(
+                *cmd,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
+            await asyncio.wait_for(proc.communicate(), timeout=30)
+        except Exception as e:
+            logger.warning("发送微信提醒失败: %s", e)
 
     async def _wait_for_speech(self, timeout: float = 5.0) -> bool:
         """

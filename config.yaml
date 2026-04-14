@@ -120,6 +120,10 @@ skills:
     - keywords: ["新对话", "重新开始"]
       action: "new_conversation"
       reply: "好的，已开启新对话"
+    - keywords: ["今天有什么安排", "今天日程", "今日安排", "今天有什么事"]
+      action: "query_today_events"
+    - keywords: ["明天有什么安排", "明天日程", "明天有什么事"]
+      action: "query_tomorrow_events"
 
 # 音频配置
 audio:
@@ -178,6 +182,23 @@ conversation:
     enabled: false
     start: "22:30"
     end: "07:30"
+
+# 日程日历配置
+calendar:
+  # 是否启用日程到时语音提醒
+  remind_enabled: true
+  # 提醒检查间隔（秒）
+  remind_check_interval: 60
+  # 默认提前提醒分钟数
+  default_remind_minutes: 5
+  # 微信提醒配置（通过 OpenClaw channel 发送）
+  wechat_remind:
+    # 是否启用微信提醒
+    enabled: false
+    # OpenClaw --to 参数（目标会话标识，如手机号 +86xxxxx）
+    to: ""
+    # OpenClaw --channel 参数
+    channel: "wechat"
 
 # Web 聊天界面配置
 web:

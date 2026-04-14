@@ -108,6 +108,13 @@ class WebServer:
         self._app.router.add_get("/logs", self._handle_logs_page)
         self._app.router.add_get("/api/logs", self._handle_logs_get)
 
+        # 日程日历页面
+        self._app.router.add_get("/calendar", self._handle_calendar_page)
+        self._app.router.add_get("/api/events", self._handle_events_list)
+        self._app.router.add_post("/api/events", self._handle_event_create)
+        self._app.router.add_put("/api/events/{id}", self._handle_event_update)
+        self._app.router.add_delete("/api/events/{id}", self._handle_event_delete)
+
         self._runner = web.AppRunner(self._app)
         await self._runner.setup()
         site = web.TCPSite(self._runner, self.host, self.port)
@@ -544,6 +551,83 @@ class WebServer:
             # 取最后 n 行（去掉可能的空末行）
             result = [l.decode("utf-8", errors="replace") for l in lines if l]
             return result[-n:]
+
+    # ------------------------------------------------------------------
+    # 日程日历路由
+    # ------------------------------------------------------------------
+
+    async def _handle_calendar_page(self, request: web.Request) -> web.Response:
+        """返回日历页面 HTML。"""
+        return self._serve_template("calendar.html")
+
+    async def _handle_events_list(self, request: web.Request) -> web.Response:
+        """获取日期范围内的日程。"""
+        if not self.db:
+            return web.json_response({"events": []})
+        start = request.query.get("start", "")
+        end = request.query.get("end", "")
+        if not start or not end:
+            return web.json_response({"error": "需要 start 和 end 参数"}, status=400)
+        try:
+            events = await self.db.get_events_by_range(start, end)
+            return web.json_response({"events": events})
+        except Exception as e:
+            return web.json_response({"error": str(e)}, status=500)
+
+    async def _handle_event_create(self, request: web.Request) -> web.Response:
+        """创建日程。"""
+        if not self.db:
+            return web.json_response({"error": "数据库不可用"}, status=500)
+        try:
+            data = await request.json()
+            event_id = await self.db.create_event(
+                title=data.get("title", ""),
+                date=data.get("date", ""),
+                start_time=data.get("start_time"),
+                end_time=data.get("end_time"),
+                all_day=data.get("all_day", False),
+                color=data.get("color", "#0f3460"),
+                category=data.get("category", ""),
+                description=data.get("description", ""),
+                remind_minutes=data.get("remind_minutes", 5),
+            )
+            event = await self.db.get_event(event_id)
+            return web.json_response({"event": event})
+        except Exception as e:
+            return web.json_response({"error": str(e)}, status=500)
+
+    async def _handle_event_update(self, request: web.Request) -> web.Response:
+        """更新日程。"""
+        if not self.db:
+            return web.json_response({"error": "数据库不可用"}, status=500)
+        try:
+            event_id = int(request.match_info["id"])
+            data = await request.json()
+            # 只传需要更新的字段
+            fields = {}
+            for k in ("title", "description", "date", "start_time", "end_time",
+                       "all_day", "color", "category", "remind_minutes"):
+                if k in data:
+                    fields[k] = data[k]
+            if fields:
+                # 修改内容后重置提醒状态
+                fields["reminded"] = 0
+                await self.db.update_event(event_id, **fields)
+            event = await self.db.get_event(event_id)
+            return web.json_response({"event": event})
+        except Exception as e:
+            return web.json_response({"error": str(e)}, status=500)
+
+    async def _handle_event_delete(self, request: web.Request) -> web.Response:
+        """删除日程。"""
+        if not self.db:
+            return web.json_response({"error": "数据库不可用"}, status=500)
+        try:
+            event_id = int(request.match_info["id"])
+            await self.db.delete_event(event_id)
+            return web.json_response({"status": "ok"})
+        except Exception as e:
+            return web.json_response({"error": str(e)}, status=500)
 
     @staticmethod
     async def _run_cmd(*args: str) -> Optional[str]:

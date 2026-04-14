@@ -779,10 +779,17 @@ class VoiceAssistant:
         ]
         logger.info("发送微信提醒: %s (target=%s)", message[:50], target[:20])
         try:
+            # 清除代理环境变量，openclaw message send 连接国内服务不需要代理
+            env = os.environ.copy()
+            for key in ("https_proxy", "http_proxy", "all_proxy",
+                        "HTTPS_PROXY", "HTTP_PROXY", "ALL_PROXY"):
+                env.pop(key, None)
+
             proc = await asyncio.create_subprocess_exec(
                 *cmd,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
+                env=env,
             )
             stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=30)
             if proc.returncode != 0:

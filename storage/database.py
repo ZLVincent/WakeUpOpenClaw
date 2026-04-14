@@ -51,7 +51,7 @@ _CREATE_EVENTS_TABLE = """
 CREATE TABLE IF NOT EXISTS zlpi_events (
     id              BIGINT AUTO_INCREMENT PRIMARY KEY,
     title           VARCHAR(200) NOT NULL,
-    description     TEXT DEFAULT '',
+    description     TEXT,
     date            DATE NOT NULL,
     start_time      TIME DEFAULT NULL,
     end_time        TIME DEFAULT NULL,

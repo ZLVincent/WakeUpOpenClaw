@@ -187,7 +187,7 @@ conversation:
   # 在此时间段内不接受语音唤醒，Web 聊天不受影响
   # 支持跨午夜，如 22:30 ~ 07:30
   do_not_disturb:
-    enabled: false
+    enabled: true
     start: "22:30"
     end: "07:30"
 

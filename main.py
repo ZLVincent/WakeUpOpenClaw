@@ -33,6 +33,7 @@ from audio.recorder import AudioRecorder
 from tts.edge_tts_engine import EdgeTTSEngine
 from utils.logger import get_logger, setup_logging
 from wake_up.factory import create_detector
+from web.server import WebServer
 
 logger = get_logger("main")
 
@@ -208,6 +209,17 @@ class VoiceAssistant:
             proxy=tts_cfg.get("proxy"),
         )
 
+        # Web 服务
+        web_cfg = config.get("web", {})
+        self.web_enabled = web_cfg.get("enabled", True)
+        self.web_server = WebServer(
+            agent_client=self.agent_client,
+            tts_engine=self.tts_engine,
+            host=web_cfg.get("host", "0.0.0.0"),
+            port=web_cfg.get("port", 8080),
+            tts_on_web=web_cfg.get("tts_on_web", False),
+        ) if self.web_enabled else None
+
         # 对话配置
         conv_cfg = config.get("conversation", {})
         self.conversation_mode = conv_cfg.get("mode", "single")  # "single" or "multi"
@@ -285,6 +297,10 @@ class VoiceAssistant:
         # 打开麦克风 (使用唤醒词引擎要求的帧大小)
         self.recorder.chunk_size = self.detector.frame_length
         self.recorder.open()
+
+        # 启动 Web 服务
+        if self.web_server:
+            await self.web_server.start()
 
         logger.info("=" * 60)
         logger.info("所有组件初始化完成，助手已就绪!")
@@ -488,6 +504,17 @@ class VoiceAssistant:
         self._running = False
         self._set_state(State.SHUTDOWN)
         self.detector.stop()
+
+        # 停止 Web 服务（异步操作，在事件循环中调度）
+        if self.web_server:
+            try:
+                loop = asyncio.get_event_loop()
+                if loop.is_running():
+                    loop.create_task(self.web_server.stop())
+                else:
+                    loop.run_until_complete(self.web_server.stop())
+            except Exception as e:
+                logger.debug("停止 Web 服务时出错: %s", e)
 
         # 释放资源
         self.recorder.close()

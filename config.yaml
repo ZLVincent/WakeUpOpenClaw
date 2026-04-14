@@ -144,6 +144,17 @@ conversation:
   # 在此时间内未检测到语音活动则退出多轮对话，回到唤醒词监听
   continue_wait_timeout: 5.0
 
+# Web 聊天界面配置
+web:
+  # 是否启用 Web 服务
+  enabled: true
+  # 监听地址 (0.0.0.0 允许局域网访问)
+  host: "0.0.0.0"
+  # 监听端口
+  port: 8080
+  # Web 端的 AI 回复是否也通过扬声器播报
+  tts_on_web: false
+
 # 日志配置
 logging:
   # 全局日志级别: DEBUG / INFO / WARNING / ERROR / CRITICAL

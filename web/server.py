@@ -103,6 +103,10 @@ class WebServer:
         self._app.router.add_get("/api/volume", self._handle_volume_get)
         self._app.router.add_put("/api/volume", self._handle_volume_set)
 
+        # 日志查看页面
+        self._app.router.add_get("/logs", self._handle_logs_page)
+        self._app.router.add_get("/api/logs", self._handle_logs_get)
+
         self._runner = web.AppRunner(self._app)
         await self._runner.setup()
         site = web.TCPSite(self._runner, self.host, self.port)
@@ -427,6 +431,102 @@ class WebServer:
         import re
         match = re.search(r"\[(\d+)%\]", output)
         return int(match.group(1)) if match else 50
+
+    # ------------------------------------------------------------------
+    # 日志查看路由
+    # ------------------------------------------------------------------
+
+    async def _handle_logs_page(self, request: web.Request) -> web.Response:
+        """返回日志查看页面 HTML。"""
+        return self._serve_template("logs.html")
+
+    async def _handle_logs_get(self, request: web.Request) -> web.Response:
+        """
+        获取日志文件内容。
+
+        Query params:
+            lines: 返回最后多少行 (默认 500, 最大 5000)
+            level: 过滤日志级别 (DEBUG/INFO/WARNING/ERROR/CRITICAL)
+            module: 过滤模块名 (wake_up/asr/agent/tts/main 等)
+            file: 日志文件名 (默认 assistant.log)
+        """
+        # 解析参数
+        max_lines = min(int(request.query.get("lines", "500")), 5000)
+        level_filter = request.query.get("level", "").upper()
+        module_filter = request.query.get("module", "").lower()
+        log_filename = request.query.get("file", "assistant.log")
+
+        # 安全检查: 只允许读取 logs/ 目录下的文件, 防止路径穿越
+        log_dir = os.path.join(os.path.dirname(self.config_path), "logs")
+        if ".." in log_filename or "/" in log_filename or "\\" in log_filename:
+            return web.json_response({"error": "无效的文件名"}, status=400)
+
+        log_path = os.path.join(log_dir, log_filename)
+
+        # 列出可用日志文件
+        available_files = []
+        try:
+            if os.path.isdir(log_dir):
+                for f in sorted(os.listdir(log_dir)):
+                    if f.startswith("assistant.log"):
+                        available_files.append(f)
+        except OSError:
+            pass
+
+        # 读取日志文件
+        if not os.path.exists(log_path):
+            return web.json_response({
+                "lines": [],
+                "total": 0,
+                "file": log_filename,
+                "available_files": available_files,
+            })
+
+        try:
+            lines = self._read_last_lines(log_path, max_lines)
+        except Exception as e:
+            logger.error("读取日志文件失败: %s", e)
+            return web.json_response({"error": str(e)}, status=500)
+
+        total = len(lines)
+
+        # 后端过滤
+        if level_filter:
+            lines = [l for l in lines if f"[{level_filter}" in l]
+        if module_filter:
+            lines = [l for l in lines if f"[{module_filter}" in l.lower()]
+
+        return web.json_response({
+            "lines": lines,
+            "total": total,
+            "file": log_filename,
+            "available_files": available_files,
+        })
+
+    @staticmethod
+    def _read_last_lines(filepath: str, n: int) -> list[str]:
+        """高效读取文件最后 n 行（从末尾向前读取）。"""
+        lines = []
+        with open(filepath, "rb") as f:
+            # 跳到文件末尾
+            f.seek(0, 2)
+            file_size = f.tell()
+            if file_size == 0:
+                return []
+
+            # 从末尾向前读取，每次 8KB
+            pos = file_size
+            buffer = b""
+            while pos > 0 and len(lines) <= n:
+                chunk_size = min(8192, pos)
+                pos -= chunk_size
+                f.seek(pos)
+                buffer = f.read(chunk_size) + buffer
+                lines = buffer.split(b"\n")
+
+            # 取最后 n 行（去掉可能的空末行）
+            result = [l.decode("utf-8", errors="replace") for l in lines if l]
+            return result[-n:]
 
     @staticmethod
     async def _run_cmd(*args: str) -> Optional[str]:

@@ -87,6 +87,16 @@
 | 日程提醒 (TTS) | done | 后台每 60s 检查，提前 N 分钟 TTS 语音播报，受免打扰限制 |
 | 日程提醒 (微信) | done | 通过 OpenClaw --deliver --channel wechat 发送，不受免打扰限制 |
 
+### 第七阶段：本地音乐播放（已完成）
+
+| 功能 | 状态 | 说明 |
+|------|------|------|
+| 音乐数据库查询 | done | 读取 zlpi_music 表，精确/模糊搜索歌名、歌手，随机/收藏过滤 |
+| MusicPlayer 播放器 | done | 播放列表管理、后台 mpv 播放循环、上一首/下一首/停止 |
+| 语音播放控制 | done | "播放歌曲XX"单曲、"播放歌曲"列表、"下一首"/"上一首"/"停止播放" |
+| 关键词智能提取 | done | 从"播放歌曲雨爱"中提取搜索词"雨爱"，去除连接词 |
+| 收藏歌曲播放 | done | "播放收藏的歌"只播放 is_favorite=1 |
+
 ---
 
 ## 项目文件清单
@@ -118,7 +128,8 @@ WakeUpOpenClaw/
 │   └── recorder.py              # PyAudio 麦克风录音
 │
 ├── skills/
-│   └── router.py                # 本地技能路由 (关键词匹配 + 内置动作)
+│   ├── router.py                # 本地技能路由 (关键词匹配 + 内置动作)
+│   └── music_player.py          # 本地音乐播放器 (播放列表 + mpv 管理)
 │
 ├── storage/
 │   └── database.py              # MySQL 对话历史 (aiomysql 异步)

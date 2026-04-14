@@ -522,3 +522,65 @@ class ChatDatabase:
                     "UPDATE zlpi_events SET reminded = 0 WHERE date = %s",
                     (today,),
                 )
+
+    # ------------------------------------------------------------------
+    # 音乐查询 (读取已有的 zlpi_music 表)
+    # ------------------------------------------------------------------
+
+    async def search_music(self, keyword: str) -> Optional[dict]:
+        """
+        按歌名模糊搜索音乐，返回匹配的第一首。
+
+        先精确匹配歌名，再模糊匹配歌名，最后模糊匹配歌手。
+        """
+        async with self._pool.acquire() as conn:
+            async with conn.cursor(aiomysql.DictCursor) as cur:
+                # 精确匹配歌名
+                await cur.execute(
+                    "SELECT * FROM zlpi_music WHERE is_deleted = 0 "
+                    "AND name = %s LIMIT 1",
+                    (keyword,),
+                )
+                row = await cur.fetchone()
+                if row:
+                    return row
+
+                # 模糊匹配歌名
+                await cur.execute(
+                    "SELECT * FROM zlpi_music WHERE is_deleted = 0 "
+                    "AND name LIKE %s LIMIT 1",
+                    (f"%{keyword}%",),
+                )
+                row = await cur.fetchone()
+                if row:
+                    return row
+
+                # 模糊匹配歌手
+                await cur.execute(
+                    "SELECT * FROM zlpi_music WHERE is_deleted = 0 "
+                    "AND singer LIKE %s ORDER BY RAND() LIMIT 1",
+                    (f"%{keyword}%",),
+                )
+                return await cur.fetchone()
+
+    async def get_all_music(self, favorite_only: bool = False) -> list:
+        """获取所有音乐列表（按歌名排序）。"""
+        async with self._pool.acquire() as conn:
+            async with conn.cursor(aiomysql.DictCursor) as cur:
+                sql = "SELECT * FROM zlpi_music WHERE is_deleted = 0"
+                if favorite_only:
+                    sql += " AND is_favorite = 1"
+                sql += " ORDER BY pk_id ASC"
+                await cur.execute(sql)
+                return await cur.fetchall()
+
+    async def get_random_music(self, favorite_only: bool = False) -> Optional[dict]:
+        """随机获取一首歌。"""
+        async with self._pool.acquire() as conn:
+            async with conn.cursor(aiomysql.DictCursor) as cur:
+                sql = "SELECT * FROM zlpi_music WHERE is_deleted = 0"
+                if favorite_only:
+                    sql += " AND is_favorite = 1"
+                sql += " ORDER BY RAND() LIMIT 1"
+                await cur.execute(sql)
+                return await cur.fetchone()

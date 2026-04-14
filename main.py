@@ -31,6 +31,7 @@ import yaml
 from agent.openclaw_client import OpenClawClient
 from asr.funasr_client import FunASRClient
 from audio.recorder import AudioRecorder
+from skills.music_player import MusicPlayer
 from skills.router import SkillRouter
 from storage.database import ChatDatabase
 from tts.edge_tts_engine import EdgeTTSEngine
@@ -263,12 +264,21 @@ class VoiceAssistant:
         self.dnd_start = self._parse_time(dnd_cfg.get("start", "22:30"))
         self.dnd_end = self._parse_time(dnd_cfg.get("end", "07:30"))
 
+        # 音乐播放器
+        tts_cfg = config.get("tts", {})
+        self.music_player = MusicPlayer(
+            database=self.db,
+            player=tts_cfg.get("player", "mpv"),
+            player_args=tts_cfg.get("player_args", ["--no-terminal", "--really-quiet"]),
+        )
+
         # 技能路由
         skills_cfg = config.get("skills", {})
         self.skill_router = SkillRouter(
             commands=skills_cfg.get("commands", []),
             enabled=skills_cfg.get("enabled", True),
             database=self.db,
+            music_player=self.music_player,
         )
 
         # 日程提醒配置

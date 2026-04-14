@@ -284,6 +284,25 @@ skills:
       action: "current_time"
     - keywords: ["新对话", "重新开始"]
       action: "new_conversation"
+    - keywords: ["播放歌曲", "播放本地歌曲", "播放音乐", "播放"]
+      action: "play_music"
+    - keywords: ["下一首", "切歌"]
+      action: "next_track"
+    - keywords: ["上一首"]
+      action: "prev_track"
+```
+
+### 本地音乐播放
+
+从 MySQL `zlpi_music` 表查询歌曲，通过 mpv 播放：
+
+```
+"播放歌曲"         → 按顺序播放所有本地歌曲
+"播放歌曲雨爱"     → 搜索歌名"雨爱"，单曲播放
+"播放杨丞琳的歌"   → 搜索歌手"杨丞琳"，单曲播放
+"播放收藏的歌"     → 播放 is_favorite=1 的歌曲
+"下一首" / "上一首" → 切换曲目
+"停止播放"         → 停止并清空播放列表
 ```
 
 ### 系统提示词

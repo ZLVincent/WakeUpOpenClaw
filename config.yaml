@@ -124,6 +124,14 @@ skills:
       action: "query_today_events"
     - keywords: ["明天有什么安排", "明天日程", "明天有什么事"]
       action: "query_tomorrow_events"
+    - keywords: ["播放歌曲", "播放本地歌曲", "放首歌", "来首歌", "播放音乐", "播放"]
+      action: "play_music"
+    - keywords: ["播放收藏", "播放喜欢的歌"]
+      action: "play_favorite_music"
+    - keywords: ["下一首", "下一曲", "切歌"]
+      action: "next_track"
+    - keywords: ["上一首", "上一曲"]
+      action: "prev_track"
 
 # 音频配置
 audio:

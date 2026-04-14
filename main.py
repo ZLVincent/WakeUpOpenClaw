@@ -30,6 +30,7 @@ import yaml
 from agent.openclaw_client import OpenClawClient
 from asr.funasr_client import FunASRClient
 from audio.recorder import AudioRecorder
+from storage.database import ChatDatabase
 from tts.edge_tts_engine import EdgeTTSEngine
 from utils.logger import get_logger, setup_logging
 from wake_up.factory import create_detector
@@ -161,7 +162,21 @@ class VoiceAssistant:
         self._running = False
         self._conversation_round = 0
 
+        # 当前活跃对话信息
+        self._current_conversation: Optional[dict] = None
+
         # ---- 初始化各组件 ----
+
+        # 数据库
+        db_cfg = config.get("database", {})
+        self.db = ChatDatabase(
+            host=db_cfg.get("host", "localhost"),
+            port=db_cfg.get("port", 3306),
+            user=db_cfg.get("user", "root"),
+            password=db_cfg.get("password", ""),
+            database=db_cfg.get("database", "wakeup_openclaw"),
+            pool_size=db_cfg.get("pool_size", 5),
+        )
 
         # 音频录音器
         audio_cfg = config.get("audio", {})
@@ -220,6 +235,7 @@ class VoiceAssistant:
             port=web_cfg.get("port", 8084),
             tts_on_web=web_cfg.get("tts_on_web", False),
             config_path=self.config_path,
+            database=self.db,
         ) if self.web_enabled else None
 
         # 对话配置
@@ -234,6 +250,7 @@ class VoiceAssistant:
         self.vad_silence_timeout = conv_cfg.get("vad_silence_timeout", 1.5)
         self.vad_energy_threshold = conv_cfg.get("vad_energy_threshold", 500)
         self.continue_wait_timeout = conv_cfg.get("continue_wait_timeout", 5.0)
+        self.max_history_rounds = conv_cfg.get("max_history_rounds", 30)
 
     def _set_state(self, new_state: State) -> None:
         """切换状态并记录日志。"""
@@ -271,6 +288,27 @@ class VoiceAssistant:
         logger.info("WakeUpOpenClaw 语音助手启动中...")
         logger.info("=" * 60)
 
+        # 0. 初始化数据库
+        logger.info("[0/4] 初始化数据库...")
+        try:
+            await self.db.initialize()
+        except Exception as e:
+            logger.warning("数据库初始化失败，对话历史将不会持久化: %s", e)
+
+        # 加载或创建活跃对话
+        try:
+            self._current_conversation = await self.db.get_or_create_active_conversation("voice")
+            # 将数据库中的 session-id 同步到 OpenClaw 客户端
+            self.agent_client.session_id = self._current_conversation["session_id"]
+            logger.info(
+                "当前对话 #%d (session=%s, 轮次=%d)",
+                self._current_conversation["id"],
+                self._current_conversation["session_id"],
+                self._current_conversation["round_count"],
+            )
+        except Exception as e:
+            logger.warning("加载对话失败: %s", e)
+
         # 1. 检查 OpenClaw
         logger.info("[1/4] 检查 OpenClaw...")
         if not await self.agent_client.check_available():
@@ -302,6 +340,7 @@ class VoiceAssistant:
 
         # 启动 Web 服务
         if self.web_server:
+            self.web_server._assistant = self
             await self.web_server.start()
 
         logger.info("=" * 60)
@@ -391,16 +430,26 @@ class VoiceAssistant:
             if self.prompt_sound:
                 await self._play_sound(self.sound_done)
 
+            # 保存用户消息到数据库
+            await self._save_message("user", recognized_text, "voice")
+
             # ---- THINKING: 调用 OpenClaw ----
             self._set_state(State.THINKING)
+            start_time = time.time()
             reply = await self.agent_client.send_message(recognized_text)
+            duration_ms = int((time.time() - start_time) * 1000)
 
             if not reply:
                 logger.warning("OpenClaw 无回复或超时，退出对话")
-                # 播放低音提示用户本轮结束
                 if self.prompt_sound:
                     await self._play_sound(self.sound_done)
                 break
+
+            # 保存 AI 回复到数据库
+            await self._save_message("assistant", reply, "voice", duration_ms)
+
+            # 检查是否需要自动新建对话
+            await self._check_auto_new_conversation()
 
             # ---- SPEAKING: TTS 合成并播放 ----
             self._set_state(State.SPEAKING)
@@ -426,6 +475,63 @@ class VoiceAssistant:
             self._conversation_round,
         )
         self._set_state(State.IDLE)
+
+    async def _save_message(
+        self, role: str, content: str, source: str, duration_ms: int = None,
+    ) -> None:
+        """保存消息到数据库。"""
+        try:
+            if self._current_conversation:
+                conv_id = self._current_conversation["id"]
+                await self.db.add_message(conv_id, role, content, source, duration_ms)
+
+                # 更新对话标题（取第一条用户消息）
+                if role == "user" and not self._current_conversation.get("title"):
+                    title = content[:50]
+                    await self.db.update_conversation_title(conv_id, title)
+                    self._current_conversation["title"] = title
+
+                # 增加轮次计数
+                if role == "assistant":
+                    count = await self.db.increment_round_count(conv_id)
+                    self._current_conversation["round_count"] = count
+        except Exception as e:
+            logger.debug("保存消息到数据库失败: %s", e)
+
+    async def _check_auto_new_conversation(self) -> None:
+        """检查是否超过最大历史轮次，自动新建对话。"""
+        try:
+            if not self._current_conversation:
+                return
+            round_count = self._current_conversation.get("round_count", 0)
+            if round_count >= self.max_history_rounds:
+                logger.info(
+                    "对话已达 %d 轮，自动开启新对话",
+                    round_count,
+                )
+                self._current_conversation = await self.db.start_new_conversation("voice")
+                self.agent_client.session_id = self._current_conversation["session_id"]
+                # 语音提示
+                await self.tts_engine.speak("当前对话已较长，已为您开启新对话")
+        except Exception as e:
+            logger.debug("自动新建对话失败: %s", e)
+
+    async def start_new_conversation(self, source: str = "voice") -> dict:
+        """
+        手动开启新对话（供 Web 和语音技能调用）。
+
+        Returns
+        -------
+        dict
+            新对话信息
+        """
+        try:
+            self._current_conversation = await self.db.start_new_conversation(source)
+            self.agent_client.session_id = self._current_conversation["session_id"]
+            return self._current_conversation
+        except Exception as e:
+            logger.error("开启新对话失败: %s", e)
+            return {}
 
     async def _wait_for_speech(self, timeout: float = 5.0) -> bool:
         """
@@ -522,6 +628,16 @@ class VoiceAssistant:
         self.recorder.close()
         self.detector.cleanup()
         self.tts_engine.cleanup()
+
+        # 关闭数据库（异步）
+        try:
+            loop = asyncio.get_event_loop()
+            if loop.is_running():
+                loop.create_task(self.db.close())
+            else:
+                loop.run_until_complete(self.db.close())
+        except Exception as e:
+            logger.debug("关闭数据库时出错: %s", e)
 
         logger.info("助手已关闭")
 

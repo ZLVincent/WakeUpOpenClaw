@@ -18,6 +18,7 @@ import yaml
 from aiohttp import web
 
 from agent.openclaw_client import OpenClawClient
+from storage.database import ChatDatabase
 from tts.edge_tts_engine import EdgeTTSEngine
 from utils.logger import get_logger
 
@@ -42,6 +43,8 @@ class WebServer:
         Web 端的 AI 回复是否也通过扬声器播报
     config_path : str
         config.yaml 文件路径，用于配置管理
+    database : ChatDatabase | None
+        数据库实例，用于对话持久化
     """
 
     def __init__(
@@ -52,6 +55,7 @@ class WebServer:
         port: int = 8084,
         tts_on_web: bool = False,
         config_path: str = "config.yaml",
+        database: Optional[ChatDatabase] = None,
     ):
         self.agent_client = agent_client
         self.tts_engine = tts_engine
@@ -59,7 +63,8 @@ class WebServer:
         self.port = port
         self.tts_on_web = tts_on_web
         self.config_path = config_path
-        self._history: list[dict] = []
+        self.db = database
+        self._assistant = None  # 由 main.py 设置，引用 VoiceAssistant 实例
         self._app: Optional[web.Application] = None
         self._runner: Optional[web.AppRunner] = None
 
@@ -70,8 +75,12 @@ class WebServer:
         # 聊天页面
         self._app.router.add_get("/", self._handle_index)
         self._app.router.add_post("/api/chat", self._handle_chat)
-        self._app.router.add_get("/api/history", self._handle_history)
-        self._app.router.add_post("/api/clear", self._handle_clear)
+
+        # 对话管理 API
+        self._app.router.add_get("/api/conversations", self._handle_conversations_list)
+        self._app.router.add_post("/api/conversations/new", self._handle_conversation_new)
+        self._app.router.add_get("/api/conversations/{id}/messages", self._handle_conversation_messages)
+        self._app.router.add_post("/api/conversations/{id}/archive", self._handle_conversation_archive)
 
         # 配置管理页面
         self._app.router.add_get("/config", self._handle_config_page)
@@ -113,25 +122,41 @@ class WebServer:
 
         logger.info("Web 收到消息: %s", message)
 
-        self._history.append({
-            "role": "user",
-            "text": message,
-            "time": time.strftime("%H:%M:%S"),
-        })
+        # 获取或创建活跃对话
+        conv = None
+        if self.db:
+            try:
+                conv = await self.db.get_or_create_active_conversation("web")
+                # 同步 session-id 到 agent
+                self.agent_client.session_id = conv["session_id"]
+            except Exception as e:
+                logger.debug("获取对话失败: %s", e)
 
+        # 保存用户消息
+        if self.db and conv:
+            try:
+                await self.db.add_message(conv["id"], "user", message, "web")
+                if not conv.get("title"):
+                    await self.db.update_conversation_title(conv["id"], message[:50])
+            except Exception as e:
+                logger.debug("保存用户消息失败: %s", e)
+
+        # 调用 OpenClaw
         start_time = time.time()
         reply = await self.agent_client.send_message(message)
         elapsed = time.time() - start_time
+        duration_ms = int(elapsed * 1000)
 
         if not reply:
             reply = "抱歉，AI 没有返回有效回复。"
 
-        self._history.append({
-            "role": "assistant",
-            "text": reply,
-            "time": time.strftime("%H:%M:%S"),
-            "duration": round(elapsed, 1),
-        })
+        # 保存 AI 回复
+        if self.db and conv:
+            try:
+                await self.db.add_message(conv["id"], "assistant", reply, "web", duration_ms)
+                await self.db.increment_round_count(conv["id"])
+            except Exception as e:
+                logger.debug("保存 AI 回复失败: %s", e)
 
         logger.info("Web AI 回复 (%.1fs): %s", elapsed, reply[:100])
 
@@ -141,15 +166,54 @@ class WebServer:
         return web.json_response({
             "reply": reply,
             "duration": round(elapsed, 1),
+            "conversation_id": conv["id"] if conv else None,
         })
 
-    async def _handle_history(self, request: web.Request) -> web.Response:
-        return web.json_response({"history": self._history})
+    # ------------------------------------------------------------------
+    # 对话管理路由
+    # ------------------------------------------------------------------
 
-    async def _handle_clear(self, request: web.Request) -> web.Response:
-        self._history.clear()
-        logger.info("Web 聊天历史已清空")
-        return web.json_response({"status": "ok"})
+    async def _handle_conversations_list(self, request: web.Request) -> web.Response:
+        """列出所有对话。"""
+        if not self.db:
+            return web.json_response({"conversations": []})
+        try:
+            conversations = await self.db.list_conversations(limit=50)
+            return web.json_response({"conversations": conversations})
+        except Exception as e:
+            return web.json_response({"error": str(e)}, status=500)
+
+    async def _handle_conversation_new(self, request: web.Request) -> web.Response:
+        """新建对话。"""
+        if self._assistant:
+            conv = await self._assistant.start_new_conversation("web")
+        elif self.db:
+            conv = await self.db.start_new_conversation("web")
+        else:
+            return web.json_response({"error": "数据库不可用"}, status=500)
+        return web.json_response({"conversation": conv})
+
+    async def _handle_conversation_messages(self, request: web.Request) -> web.Response:
+        """获取某个对话的消息。"""
+        if not self.db:
+            return web.json_response({"messages": []})
+        try:
+            conv_id = int(request.match_info["id"])
+            messages = await self.db.get_messages(conv_id, limit=200)
+            return web.json_response({"messages": messages})
+        except Exception as e:
+            return web.json_response({"error": str(e)}, status=500)
+
+    async def _handle_conversation_archive(self, request: web.Request) -> web.Response:
+        """归档对话。"""
+        if not self.db:
+            return web.json_response({"error": "数据库不可用"}, status=500)
+        try:
+            conv_id = int(request.match_info["id"])
+            await self.db.archive_conversation(conv_id)
+            return web.json_response({"status": "ok"})
+        except Exception as e:
+            return web.json_response({"error": str(e)}, status=500)
 
     # ------------------------------------------------------------------
     # 配置管理路由

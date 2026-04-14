@@ -3,6 +3,7 @@ pyaudio>=0.2.14         # 音频采集
 websockets>=12.0        # WebSocket（FunASR 客户端）
 edge-tts>=6.1.0         # 微软 Edge TTS
 pyyaml>=6.0             # 配置文件解析
+aiomysql>=0.2.0         # 异步 MySQL 客户端（对话历史持久化）
 
 # 唤醒词引擎 (根据 config.yaml 中 wake_up.engine 选择安装其中一个)
 #

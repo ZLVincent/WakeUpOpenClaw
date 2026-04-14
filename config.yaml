@@ -143,6 +143,9 @@ conversation:
   # AI 回复后等待用户继续说话的时间（秒）
   # 在此时间内未检测到语音活动则退出多轮对话，回到唤醒词监听
   continue_wait_timeout: 5.0
+  # 单个对话的最大轮次，超过后自动归档旧对话并开启新对话
+  # 设为 0 表示不自动分割
+  max_history_rounds: 30
 
 # Web 聊天界面配置
 web:
@@ -154,6 +157,15 @@ web:
   port: 8084
   # Web 端的 AI 回复是否也通过扬声器播报
   tts_on_web: false
+
+# 数据库配置 (MySQL，用于对话历史持久化)
+database:
+  host: "localhost"
+  port: 3306
+  user: "root"
+  password: "your_password"
+  database: "wakeup_openclaw"
+  pool_size: 5
 
 # 日志配置
 logging:

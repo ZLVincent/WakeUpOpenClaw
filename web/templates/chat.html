@@ -24,6 +24,16 @@
   }
   header h1 { font-size: 18px; color: #e94560; }
   header .status { font-size: 12px; color: #888; }
+  nav { display: flex; gap: 12px; align-items: center; }
+  nav a {
+    color: #888;
+    text-decoration: none;
+    font-size: 13px;
+    padding: 4px 10px;
+    border-radius: 4px;
+    transition: all 0.2s;
+  }
+  nav a:hover, nav a.active { color: #e94560; background: #1a1a2e; }
   #chat-box {
     flex: 1;
     overflow-y: auto;
@@ -120,7 +130,11 @@
 
 <header>
   <h1>WakeUpOpenClaw</h1>
-  <span class="status" id="status">就绪</span>
+  <nav>
+    <a href="/" class="active">聊天</a>
+    <a href="/config">配置</a>
+    <span class="status" id="status">就绪</span>
+  </nav>
 </header>
 
 <div id="chat-box"></div>

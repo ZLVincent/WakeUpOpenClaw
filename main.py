@@ -154,8 +154,9 @@ class VoiceAssistant:
     整合唤醒词检测、语音识别、AI Agent、语音合成。
     """
 
-    def __init__(self, config: dict):
+    def __init__(self, config: dict, config_path: str = "config.yaml"):
         self.config = config
+        self.config_path = config_path
         self._state = State.IDLE
         self._running = False
         self._conversation_round = 0
@@ -216,8 +217,9 @@ class VoiceAssistant:
             agent_client=self.agent_client,
             tts_engine=self.tts_engine,
             host=web_cfg.get("host", "0.0.0.0"),
-            port=web_cfg.get("port", 8080),
+            port=web_cfg.get("port", 8084),
             tts_on_web=web_cfg.get("tts_on_web", False),
+            config_path=self.config_path,
         ) if self.web_enabled else None
 
         # 对话配置
@@ -545,7 +547,7 @@ def main():
     logger.info("配置文件已加载: %s", config_path)
 
     # 创建助手实例
-    assistant = VoiceAssistant(config)
+    assistant = VoiceAssistant(config, config_path=config_path)
 
     # 注册信号处理
     def signal_handler(signum, frame):

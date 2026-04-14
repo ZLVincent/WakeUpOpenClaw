@@ -199,14 +199,12 @@ calendar:
   remind_check_interval: 60
   # 默认提前提醒分钟数
   default_remind_minutes: 5
-  # 微信提醒配置（通过 OpenClaw channel 发送）
+  # 微信提醒配置（通过 openclaw message send 发送）
   wechat_remind:
     # 是否启用微信提醒
     enabled: false
-    # OpenClaw --to 参数（目标会话标识，如手机号 +86xxxxx）
-    to: ""
-    # OpenClaw --channel 参数
-    channel: "wechat"
+    # openclaw message send 的 --target 参数（chat_id 格式）
+    target: "o9cq80wES_EZ3kSkYZ08KgWfiM6M@im.wechat"
 
 # Web 聊天界面配置
 web:

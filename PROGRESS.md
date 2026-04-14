@@ -85,7 +85,7 @@
 | 日程颜色分类 | done | 8 种预设颜色，日程块左边框着色 |
 | 语音日程查询 | done | "今天有什么安排"/"明天有什么事" 本地技能匹配 |
 | 日程提醒 (TTS) | done | 后台每 60s 检查，提前 N 分钟 TTS 语音播报，受免打扰限制 |
-| 日程提醒 (微信) | done | 通过 OpenClaw --deliver --channel wechat 发送，不受免打扰限制 |
+| 日程提醒 (微信) | done | 通过 openclaw message send --target --message 发送，不受免打扰限制 |
 
 ### 第七阶段：本地音乐播放（已完成）
 

@@ -753,24 +753,21 @@ class VoiceAssistant:
             await asyncio.sleep(self.remind_check_interval)
 
     async def _send_wechat_remind(self, message: str) -> None:
-        """通过 OpenClaw channel 发送微信提醒消息。"""
+        """通过 OpenClaw message send 发送微信提醒消息。"""
         cfg = self.wechat_remind_cfg
         if not cfg.get("enabled", False):
             return
 
-        to = cfg.get("to", "")
-        channel = cfg.get("channel", "wechat")
-        if not to:
-            logger.warning("微信提醒未配置 to 参数，跳过")
+        target = cfg.get("target", "")
+        if not target:
+            logger.warning("微信提醒未配置 target 参数，跳过")
             return
 
         cmd = [
             self.agent_client.cli_path,
-            "agent",
-            "--to", to,
-            "--channel", channel,
+            "message", "send",
+            "--target", target,
             "--message", message,
-            "--deliver",
         ]
         logger.info("发送微信提醒: %s", message[:50])
         try:

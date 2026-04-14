@@ -89,6 +89,12 @@ class WebServer:
         self._app.router.add_get("/api/config/{section}", self._handle_config_section_get)
         self._app.router.add_put("/api/config/{section}", self._handle_config_section_update)
 
+        # 系统管理 API
+        self._app.router.add_get("/api/system/version", self._handle_system_version)
+        self._app.router.add_get("/api/system/update/check", self._handle_update_check)
+        self._app.router.add_post("/api/system/update/apply", self._handle_update_apply)
+        self._app.router.add_post("/api/system/restart", self._handle_restart)
+
         self._runner = web.AppRunner(self._app)
         await self._runner.setup()
         site = web.TCPSite(self._runner, self.host, self.port)
@@ -318,3 +324,80 @@ class WebServer:
         except Exception as e:
             logger.error("写入配置文件失败: %s", e)
             return False
+
+    # ------------------------------------------------------------------
+    # 系统管理路由
+    # ------------------------------------------------------------------
+
+    async def _handle_system_version(self, request: web.Request) -> web.Response:
+        """获取当前版本信息。"""
+        version = await self._run_cmd("git", "log", "-1", "--format=%h %s (%ci)")
+        branch = await self._run_cmd("git", "rev-parse", "--abbrev-ref", "HEAD")
+        return web.json_response({
+            "version": version.strip() if version else "unknown",
+            "branch": branch.strip() if branch else "unknown",
+        })
+
+    async def _handle_update_check(self, request: web.Request) -> web.Response:
+        """检查远程是否有更新。"""
+        # fetch 最新
+        await self._run_cmd("git", "fetch", "origin")
+        # 比较本地和远程
+        branch = (await self._run_cmd("git", "rev-parse", "--abbrev-ref", "HEAD") or "main").strip()
+        log = await self._run_cmd(
+            "git", "log", f"HEAD..origin/{branch}", "--oneline",
+        )
+        commits = [l.strip() for l in (log or "").strip().split("\n") if l.strip()]
+        return web.json_response({
+            "has_update": len(commits) > 0,
+            "commits": commits,
+            "branch": branch,
+        })
+
+    async def _handle_update_apply(self, request: web.Request) -> web.Response:
+        """拉取更新并重启。"""
+        # git pull
+        pull_output = await self._run_cmd("git", "pull", "origin")
+        if pull_output is None:
+            return web.json_response({"error": "git pull 失败"}, status=500)
+
+        logger.info("OTA 更新: git pull 完成: %s", pull_output.strip()[:200])
+
+        # 重启服务
+        restart_output = await self._run_cmd(
+            "supervisorctl", "restart", "WakeUpOpenClaw",
+        )
+        logger.info("OTA 更新: 重启命令已发送: %s", (restart_output or "").strip()[:200])
+
+        return web.json_response({
+            "status": "ok",
+            "pull": pull_output.strip()[:500],
+            "restart": (restart_output or "").strip()[:200],
+        })
+
+    async def _handle_restart(self, request: web.Request) -> web.Response:
+        """仅重启服务（不拉取更新）。"""
+        output = await self._run_cmd("supervisorctl", "restart", "WakeUpOpenClaw")
+        logger.info("手动重启命令已发送: %s", (output or "").strip()[:200])
+        return web.json_response({
+            "status": "ok",
+            "output": (output or "").strip()[:200],
+        })
+
+    @staticmethod
+    async def _run_cmd(*args: str) -> Optional[str]:
+        """运行系统命令，返回 stdout 或 None。"""
+        try:
+            proc = await asyncio.create_subprocess_exec(
+                *args,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
+            stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=30)
+            if proc.returncode != 0:
+                logger.warning("命令 %s 返回 code=%d: %s", args, proc.returncode,
+                             stderr.decode("utf-8", errors="replace")[:200])
+            return stdout.decode("utf-8", errors="replace")
+        except Exception as e:
+            logger.error("执行命令 %s 失败: %s", args, e)
+            return None

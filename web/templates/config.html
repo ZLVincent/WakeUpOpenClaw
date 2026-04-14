@@ -157,6 +157,23 @@
   <div class="loading">加载配置中...</div>
 </div>
 
+<!-- 系统管理区域 -->
+<div class="container" style="padding-top: 0;">
+  <div class="section">
+    <div class="section-header">
+      <h2>系统管理</h2>
+      <span class="toggle">[ - ]</span>
+    </div>
+    <div class="section-body" style="display:flex;flex-wrap:wrap;gap:10px;align-items:center;">
+      <span id="sys-version" style="font-size:12px;color:#888;flex:1;min-width:200px;">版本: 加载中...</span>
+      <button class="btn-reload" onclick="checkUpdate()" id="check-btn">检查更新</button>
+      <button class="btn-save" onclick="applyUpdate()" id="update-btn" style="display:none;">拉取更新并重启</button>
+      <button class="btn-reload" onclick="restartService()">重启服务</button>
+    </div>
+    <div id="update-info" style="padding:0 16px 12px;font-size:12px;color:#888;display:none;"></div>
+  </div>
+</div>
+
 <div class="actions">
   <button class="btn-reload" onclick="loadConfig()">重新加载</button>
   <button class="btn-save" id="save-btn" onclick="saveConfig()">保存配置</button>
@@ -409,6 +426,64 @@ async function saveConfig() {
 }
 
 loadConfig();
+
+// 系统管理
+async function loadVersion() {
+  try {
+    const res = await fetch('/api/system/version');
+    const data = await res.json();
+    document.getElementById('sys-version').textContent =
+      '版本: ' + data.version + ' (' + data.branch + ')';
+  } catch(e) {}
+}
+
+async function checkUpdate() {
+  const btn = document.getElementById('check-btn');
+  btn.disabled = true; btn.textContent = '检查中...';
+  try {
+    const res = await fetch('/api/system/update/check');
+    const data = await res.json();
+    const info = document.getElementById('update-info');
+    const updateBtn = document.getElementById('update-btn');
+    if (data.has_update) {
+      info.style.display = 'block';
+      info.innerHTML = '<strong>发现 ' + data.commits.length + ' 个更新:</strong><br>' +
+        data.commits.map(c => '&bull; ' + c).join('<br>');
+      updateBtn.style.display = 'inline-block';
+      showToast('发现 ' + data.commits.length + ' 个更新', 'success');
+    } else {
+      info.style.display = 'block';
+      info.textContent = '已是最新版本';
+      updateBtn.style.display = 'none';
+      showToast('已是最新版本', 'success');
+    }
+  } catch(e) { showToast('检查失败: ' + e.message, 'error'); }
+  btn.disabled = false; btn.textContent = '检查更新';
+}
+
+async function applyUpdate() {
+  if (!confirm('确定要拉取更新并重启服务吗？')) return;
+  const btn = document.getElementById('update-btn');
+  btn.disabled = true; btn.textContent = '更新中...';
+  try {
+    const res = await fetch('/api/system/update/apply', {method: 'POST'});
+    const data = await res.json();
+    if (data.error) { showToast(data.error, 'error'); }
+    else { showToast('更新完成，服务正在重启...', 'success'); }
+  } catch(e) { showToast('更新失败: ' + e.message, 'error'); }
+  btn.disabled = false; btn.textContent = '拉取更新并重启';
+}
+
+async function restartService() {
+  if (!confirm('确定要重启服务吗？')) return;
+  try {
+    await fetch('/api/system/restart', {method: 'POST'});
+    showToast('重启命令已发送，页面将在几秒后刷新...', 'success');
+    setTimeout(() => location.reload(), 5000);
+  } catch(e) { showToast('重启失败: ' + e.message, 'error'); }
+}
+
+loadVersion();
 </script>
 </body>
 </html>

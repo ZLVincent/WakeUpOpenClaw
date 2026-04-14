@@ -174,6 +174,7 @@
   .status-dot.listening { background: #2196f3; animation: pulse 1s infinite; }
   .status-dot.thinking { background: #ff9800; animation: pulse 1.5s infinite; }
   .status-dot.speaking { background: #e94560; }
+  .status-dot.dnd { background: #9e9e9e; }
   @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.4; } }
 
   /* 音量控制 */
@@ -389,7 +390,8 @@ msgInput.focus();
 
 // WebSocket 状态面板
 const stateLabels = {
-  idle: '待唤醒', listening: '录音中', thinking: 'AI 思考中', speaking: '语音播放中', shutdown: '已关闭',
+  idle: '待唤醒', listening: '录音中', thinking: 'AI 思考中', speaking: '语音播放中',
+  dnd: '免打扰中', shutdown: '已关闭',
 };
 
 function connectStatusWs() {

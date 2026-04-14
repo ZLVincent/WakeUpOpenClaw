@@ -17,6 +17,7 @@ WakeUpOpenClaw — 语音唤醒 AI 助手主程序
 """
 
 import asyncio
+import datetime
 import enum
 import os
 import signal
@@ -256,6 +257,12 @@ class VoiceAssistant:
         self.barge_in = conv_cfg.get("barge_in", False)
         self.streaming_tts = conv_cfg.get("streaming_tts", False)
 
+        # 免打扰配置
+        dnd_cfg = conv_cfg.get("do_not_disturb", {})
+        self.dnd_enabled = dnd_cfg.get("enabled", False)
+        self.dnd_start = self._parse_time(dnd_cfg.get("start", "22:30"))
+        self.dnd_end = self._parse_time(dnd_cfg.get("end", "07:30"))
+
         # 技能路由
         skills_cfg = config.get("skills", {})
         self.skill_router = SkillRouter(
@@ -273,6 +280,34 @@ class VoiceAssistant:
             asyncio.ensure_future(
                 self.web_server.broadcast_status(new_state.value)
             )
+
+    def _is_dnd_active(self) -> bool:
+        """
+        检查当前是否在免打扰时段内。
+
+        支持跨午夜时段（如 22:30 ~ 07:30）。
+        """
+        if not self.dnd_enabled:
+            return False
+
+        now = datetime.datetime.now().time()
+
+        if self.dnd_start <= self.dnd_end:
+            # 不跨午夜: 如 08:00 ~ 18:00
+            return self.dnd_start <= now <= self.dnd_end
+        else:
+            # 跨午夜: 如 22:30 ~ 07:30
+            return now >= self.dnd_start or now <= self.dnd_end
+
+    @staticmethod
+    def _parse_time(time_str: str) -> datetime.time:
+        """将 'HH:MM' 字符串解析为 datetime.time 对象。"""
+        try:
+            parts = time_str.strip().split(":")
+            return datetime.time(int(parts[0]), int(parts[1]))
+        except (ValueError, IndexError):
+            logger.warning("时间格式无效: '%s'，使用默认值 00:00", time_str)
+            return datetime.time(0, 0)
 
     async def _play_sound(self, sound_path: str) -> None:
         """
@@ -387,7 +422,23 @@ class VoiceAssistant:
         """
         IDLE 状态：持续监听唤醒词。
         检测到唤醒词后进入多轮对话。
+        免打扰时段内暂停语音唤醒（Web 端不受影响）。
         """
+        # 免打扰检查
+        if self._is_dnd_active():
+            logger.info(
+                "当前处于免打扰时段 (%s ~ %s)，语音唤醒已暂停",
+                self.dnd_start.strftime("%H:%M"),
+                self.dnd_end.strftime("%H:%M"),
+            )
+            if self.web_server and self.web_server._ws_clients:
+                await self.web_server.broadcast_status("dnd")
+            while self._running and self._is_dnd_active():
+                await asyncio.sleep(60)
+            if not self._running:
+                return
+            logger.info("免打扰时段结束，恢复语音唤醒")
+
         logger.info("等待唤醒词... (说出唤醒词来激活)")
 
         # 在线程中运行阻塞的唤醒词监听

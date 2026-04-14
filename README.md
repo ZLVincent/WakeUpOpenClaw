@@ -238,6 +238,18 @@ conversation:
   streaming_tts: true  # 长回复分句合成，边合成边播放，降低首字延迟
 ```
 
+### 免打扰时间
+
+设定时间段内不接受语音唤醒（Web 聊天不受影响）：
+
+```yaml
+conversation:
+  do_not_disturb:
+    enabled: true
+    start: "22:30"    # 晚上 10:30 开始
+    end: "07:30"      # 早上 7:30 结束（支持跨午夜）
+```
+
 ### VAD 端点检测调优
 
 ```yaml

@@ -171,6 +171,13 @@ conversation:
   # 是否启用流式 TTS（分句合成，边合成边播放）
   # 开启后长文本回复的首字延迟显著降低，但短回复无明显区别
   streaming_tts: false
+  # 免打扰时间段（24小时制 HH:MM）
+  # 在此时间段内不接受语音唤醒，Web 聊天不受影响
+  # 支持跨午夜，如 22:30 ~ 07:30
+  do_not_disturb:
+    enabled: false
+    start: "22:30"
+    end: "07:30"
 
 # Web 聊天界面配置
 web:

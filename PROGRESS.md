@@ -39,6 +39,7 @@
 | OpenClaw 超时恢复 | done | 超时后播提示音直接回唤醒词监听，不尝试 TTS |
 | OpenClaw 响应加速 | done | 流式读取 stdout，JSON 完整即返回，不等进程退出（节省 ~15s） |
 | TTS 临时文件清理 | done | speak() try/finally 确保清理 + 定期清理过期文件 + 启动时清理残留目录 |
+| 免打扰时间 | done | 配置时间段内暂停语音唤醒（跨午夜支持），Web 聊天不受影响，状态面板显示灰色"免打扰中" |
 
 ### 第三阶段：扩展功能（已完成）
 
@@ -140,7 +141,7 @@ WakeUpOpenClaw/
 | `agent` | method, session_id, thinking, timeout, local, system_prompt | OpenClaw 调用参数 |
 | `tts` | voice, rate, volume, player, proxy | Edge TTS 语音合成参数 |
 | `audio` | sample_rate, channels, chunk_size, input_device_index | 音频采集参数 |
-| `conversation` | mode, silence_timeout, vad_*, barge_in, streaming_tts, max_history_rounds | 对话行为参数 |
+| `conversation` | mode, silence_timeout, vad_*, barge_in, streaming_tts, max_history_rounds, do_not_disturb | 对话行为参数 |
 | `skills` | enabled, commands[] | 本地技能指令列表 |
 | `web` | enabled, host, port, tts_on_web | Web 服务参数 |
 | `database` | host, port, user, password, database, pool_size | MySQL 连接参数 |

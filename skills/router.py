@@ -145,6 +145,7 @@ class SkillRouter:
             "query_today": self._action_query_today_events,
             "query_tomorrow": self._action_query_tomorrow_events,
             "query_week": self._action_query_week_events,
+            "query_next_week": self._action_query_next_week_events,
             "query_upcoming": self._action_query_upcoming_events,
             # conversation
             "new_conversation": self._action_new_conversation,
@@ -451,6 +452,42 @@ class SkillRouter:
                 lines.append(f"{weekday}，{ev['title']}。")
 
         return SkillResult(text="\n".join(lines), action="query_week", skill="calendar")
+
+    async def _action_query_next_week_events(
+        self, skill: Skill, action: SkillAction, user_text: str = ""
+    ) -> SkillResult:
+        """查询下周日程。"""
+        if not self.db:
+            return SkillResult(text="日程功能暂不可用", action="query_next_week", skill="calendar")
+
+        today = datetime.date.today()
+        next_monday = today + datetime.timedelta(days=(7 - today.weekday()))
+        next_sunday = next_monday + datetime.timedelta(days=6)
+
+        try:
+            events = await self.db.get_events_by_range(
+                next_monday.strftime("%Y-%m-%d"), next_sunday.strftime("%Y-%m-%d"),
+            )
+        except Exception as e:
+            logger.warning("查询下周日程失败: %s", e)
+            return SkillResult(text="查询日程时出错了", action="query_next_week", skill="calendar")
+
+        if not events:
+            return SkillResult(text="下周没有日程安排", action="query_next_week", skill="calendar")
+
+        lines = [f"下周共有{len(events)}个日程。"]
+        for ev in events:
+            day = datetime.date.fromisoformat(ev["date"])
+            weekday = self._WEEKDAY_NAMES[day.weekday()]
+            if ev.get("all_day"):
+                lines.append(f"{weekday}，全天，{ev['title']}。")
+            elif ev.get("start_time"):
+                t = self._format_time_for_speech(ev['start_time'])
+                lines.append(f"{weekday}，{t}，{ev['title']}。")
+            else:
+                lines.append(f"{weekday}，{ev['title']}。")
+
+        return SkillResult(text="\n".join(lines), action="query_next_week", skill="calendar")
 
     async def _action_query_upcoming_events(
         self, skill: Skill, action: SkillAction, user_text: str = ""

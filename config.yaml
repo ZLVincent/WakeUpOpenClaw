@@ -104,6 +104,12 @@ skills:
         - 本周日程
         - 这周有什么事
         - 这个星期日程
+      query_next_week:
+        keywords:
+        - 下周有什么安排
+        - 下周日程
+        - 下周有什么事
+        - 下个星期日程
       query_upcoming:
         keywords:
         - 未完成的日程

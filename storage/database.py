@@ -492,6 +492,31 @@ class ChatDatabase:
         """获取某一天的日程列表。"""
         return await self.get_events_by_range(date, date)
 
+    async def get_upcoming_events_in_range(self, start: str, end: str) -> list:
+        """
+        获取日期范围内尚未过时的日程。
+
+        今天的日程：只返回 start_time > 当前时间 或 all_day=1 的。
+        未来的日程：全部返回。
+        """
+        events = await self.get_events_by_range(start, end)
+        now = datetime.datetime.now()
+        today = now.strftime("%Y-%m-%d")
+        current_time = now.strftime("%H:%M")
+
+        result = []
+        for ev in events:
+            if ev["date"] == today:
+                # 今天的日程：全天事件保留，其他只保留未过时间的
+                if ev.get("all_day"):
+                    result.append(ev)
+                elif ev.get("start_time") and ev["start_time"] > current_time:
+                    result.append(ev)
+            else:
+                # 未来的日程全部保留
+                result.append(ev)
+        return result
+
     async def get_upcoming_reminders(self) -> list:
         """获取需要提醒的即将到来的日程。"""
         now = datetime.datetime.now()

@@ -293,6 +293,10 @@ skills:
     actions:
       query_today:
         keywords: ["今天有什么安排", "今天日程"]
+      query_week:
+        keywords: ["这周有什么安排", "本周日程"]
+      query_upcoming:
+        keywords: ["还有什么日程", "待完成日程"]
   conversation:                                # 对话管理技能
     enabled: true
     actions:

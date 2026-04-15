@@ -98,6 +98,18 @@ skills:
         - 明天有什么安排
         - 明天日程
         - 明天有什么事
+      query_week:
+        keywords:
+        - 这周有什么安排
+        - 本周日程
+        - 这周有什么事
+        - 这个星期日程
+      query_upcoming:
+        keywords:
+        - 未完成的日程
+        - 还有什么日程
+        - 待完成日程
+        - 还有什么安排
   conversation:
     enabled: true
     actions:

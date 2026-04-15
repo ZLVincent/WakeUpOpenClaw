@@ -88,7 +88,7 @@
 | 日程 CRUD API | done | GET/POST/PUT/DELETE /api/events |
 | 日程日历页面 | done | 7/14 天视图，左右翻页，周末紫色，今天红色，点击新建/编辑 |
 | 日程颜色分类 | done | 8 种预设颜色，日程块左边框着色 |
-| 语音日程查询 | done | "今天有什么安排"/"明天有什么事" 本地技能匹配 |
+| 语音日程查询 | done | 今天/明天/本周/本周剩余 日程查询，多行句号分隔播报 |
 | 日程提醒 (TTS) | done | 后台每 60s 检查，提前 N 分钟 TTS 语音播报，受免打扰限制 |
 | 日程提醒 (微信) | done | 通过 openclaw message send --target --message 发送，不受免打扰限制 |
 

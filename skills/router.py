@@ -144,6 +144,8 @@ class SkillRouter:
             # calendar
             "query_today": self._action_query_today_events,
             "query_tomorrow": self._action_query_tomorrow_events,
+            "query_week": self._action_query_week_events,
+            "query_upcoming": self._action_query_upcoming_events,
             # conversation
             "new_conversation": self._action_new_conversation,
             # utility
@@ -380,16 +382,97 @@ class SkillRouter:
         if not events:
             return SkillResult(text=f"{label}没有日程安排", action="query_events", skill="calendar")
 
-        parts = []
+        lines = [f"{label}有{len(events)}个日程。"]
         for ev in events:
             if ev.get("all_day"):
-                parts.append(f"全天，{ev['title']}")
+                lines.append(f"全天，{ev['title']}。")
             elif ev.get("start_time"):
-                parts.append(f"{ev['start_time']}，{ev['title']}")
+                lines.append(f"{ev['start_time']}，{ev['title']}。")
             else:
-                parts.append(ev["title"])
-        reply = f"{label}有{len(events)}个日程：" + "；".join(parts)
+                lines.append(f"{ev['title']}。")
+        reply = "\n".join(lines)
         return SkillResult(text=reply, action="query_events", skill="calendar")
+
+    _WEEKDAY_NAMES = ["周一", "周二", "周三", "周四", "周五", "周六", "周日"]
+
+    async def _action_query_week_events(
+        self, skill: Skill, action: SkillAction, user_text: str = ""
+    ) -> SkillResult:
+        """查询本周日程。"""
+        if not self.db:
+            return SkillResult(text="日程功能暂不可用", action="query_week", skill="calendar")
+
+        today = datetime.date.today()
+        monday = today - datetime.timedelta(days=today.weekday())
+        sunday = monday + datetime.timedelta(days=6)
+
+        try:
+            events = await self.db.get_events_by_range(
+                monday.strftime("%Y-%m-%d"), sunday.strftime("%Y-%m-%d"),
+            )
+        except Exception as e:
+            logger.warning("查询本周日程失败: %s", e)
+            return SkillResult(text="查询日程时出错了", action="query_week", skill="calendar")
+
+        if not events:
+            return SkillResult(text="本周没有日程安排", action="query_week", skill="calendar")
+
+        lines = [f"本周共有{len(events)}个日程。"]
+        for ev in events:
+            day = datetime.date.fromisoformat(ev["date"])
+            weekday = self._WEEKDAY_NAMES[day.weekday()]
+            if ev.get("all_day"):
+                lines.append(f"{weekday}，全天，{ev['title']}。")
+            elif ev.get("start_time"):
+                lines.append(f"{weekday}，{ev['start_time']}，{ev['title']}。")
+            else:
+                lines.append(f"{weekday}，{ev['title']}。")
+
+        return SkillResult(text="\n".join(lines), action="query_week", skill="calendar")
+
+    async def _action_query_upcoming_events(
+        self, skill: Skill, action: SkillAction, user_text: str = ""
+    ) -> SkillResult:
+        """查询本周剩余未完成的日程。"""
+        if not self.db:
+            return SkillResult(text="日程功能暂不可用", action="query_upcoming", skill="calendar")
+
+        today = datetime.date.today()
+        sunday = today + datetime.timedelta(days=(6 - today.weekday()))
+
+        try:
+            events = await self.db.get_upcoming_events_in_range(
+                today.strftime("%Y-%m-%d"), sunday.strftime("%Y-%m-%d"),
+            )
+        except Exception as e:
+            logger.warning("查询剩余日程失败: %s", e)
+            return SkillResult(text="查询日程时出错了", action="query_upcoming", skill="calendar")
+
+        if not events:
+            return SkillResult(text="本周剩余没有待完成的日程", action="query_upcoming", skill="calendar")
+
+        lines = [f"本周还有{len(events)}个未完成的日程。"]
+        for ev in events:
+            day = datetime.date.fromisoformat(ev["date"])
+            # 用相对日期描述
+            delta = (day - today).days
+            if delta == 0:
+                day_label = "今天"
+            elif delta == 1:
+                day_label = "明天"
+            elif delta == 2:
+                day_label = "后天"
+            else:
+                day_label = self._WEEKDAY_NAMES[day.weekday()]
+
+            if ev.get("all_day"):
+                lines.append(f"{day_label}，全天，{ev['title']}。")
+            elif ev.get("start_time"):
+                lines.append(f"{day_label}，{ev['start_time']}，{ev['title']}。")
+            else:
+                lines.append(f"{day_label}，{ev['title']}。")
+
+        return SkillResult(text="\n".join(lines), action="query_upcoming", skill="calendar")
 
     # ------------------------------------------------------------------
     # conversation 技能动作

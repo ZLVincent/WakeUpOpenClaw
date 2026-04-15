@@ -479,14 +479,9 @@ class WebServer:
 
         logger.info("OTA 更新: git pull 完成: %s", pull_output.strip()[:200])
 
-        # 先返回响应，延迟 1 秒后在后台执行重启
-        # 避免 supervisorctl restart 杀掉当前进程导致响应无法返回
-        asyncio.get_running_loop().call_later(
-            1.0,
-            lambda: asyncio.ensure_future(
-                self._run_cmd("supervisorctl", "restart", "WakeUpOpenClaw")
-            ),
-        )
+        # 延迟 1 秒后在独立进程中执行重启
+        # 使用 start_new_session=True 确保重启进程不会随当前进程一起被杀
+        asyncio.get_running_loop().call_later(1.0, self._spawn_restart)
         logger.info("OTA 更新: 重启命令将在 1 秒后执行")
 
         return web.json_response({
@@ -497,18 +492,32 @@ class WebServer:
 
     async def _handle_restart(self, request: web.Request) -> web.Response:
         """仅重启服务（不拉取更新）。"""
-        # 先返回响应，延迟 1 秒后在后台执行重启
-        asyncio.get_running_loop().call_later(
-            1.0,
-            lambda: asyncio.ensure_future(
-                self._run_cmd("supervisorctl", "restart", "WakeUpOpenClaw")
-            ),
-        )
+        asyncio.get_running_loop().call_later(1.0, self._spawn_restart)
         logger.info("手动重启命令将在 1 秒后执行")
         return web.json_response({
             "status": "ok",
             "message": "重启命令已调度，服务即将重启",
         })
+
+    @staticmethod
+    def _spawn_restart():
+        """
+        在独立进程中执行 supervisorctl restart。
+
+        使用 subprocess.Popen + start_new_session=True，确保重启进程
+        脱离当前进程组，不会因为当前 Python 进程被杀而一起终止。
+        """
+        import subprocess
+        try:
+            subprocess.Popen(
+                ["supervisorctl", "restart", "WakeUpOpenClaw"],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                start_new_session=True,  # 脱离当前进程组
+            )
+            logger.info("重启进程已启动（独立会话）")
+        except Exception as e:
+            logger.error("启动重启进程失败: %s", e)
 
     # ------------------------------------------------------------------
     # 音量控制路由

@@ -387,13 +387,34 @@ class SkillRouter:
             if ev.get("all_day"):
                 lines.append(f"全天，{ev['title']}。")
             elif ev.get("start_time"):
-                lines.append(f"{ev['start_time']}，{ev['title']}。")
+                t = self._format_time_for_speech(ev['start_time'])
+                lines.append(f"{t}，{ev['title']}。")
             else:
                 lines.append(f"{ev['title']}。")
         reply = "\n".join(lines)
         return SkillResult(text=reply, action="query_events", skill="calendar")
 
     _WEEKDAY_NAMES = ["周一", "周二", "周三", "周四", "周五", "周六", "周日"]
+
+    @staticmethod
+    def _format_time_for_speech(time_str: str) -> str:
+        """
+        将时间字符串转换为适合语音播报的格式。
+
+        "14:00" → "14点"
+        "14:30" → "14点30分"
+        "09:05" → "9点05分"
+        """
+        try:
+            parts = time_str.strip().split(":")
+            hour = int(parts[0])
+            minute = int(parts[1]) if len(parts) > 1 else 0
+            if minute == 0:
+                return f"{hour}点"
+            else:
+                return f"{hour}点{minute:02d}分"
+        except (ValueError, IndexError):
+            return time_str
 
     async def _action_query_week_events(
         self, skill: Skill, action: SkillAction, user_text: str = ""
@@ -424,7 +445,8 @@ class SkillRouter:
             if ev.get("all_day"):
                 lines.append(f"{weekday}，全天，{ev['title']}。")
             elif ev.get("start_time"):
-                lines.append(f"{weekday}，{ev['start_time']}，{ev['title']}。")
+                t = self._format_time_for_speech(ev['start_time'])
+                lines.append(f"{weekday}，{t}，{ev['title']}。")
             else:
                 lines.append(f"{weekday}，{ev['title']}。")
 
@@ -468,7 +490,8 @@ class SkillRouter:
             if ev.get("all_day"):
                 lines.append(f"{day_label}，全天，{ev['title']}。")
             elif ev.get("start_time"):
-                lines.append(f"{day_label}，{ev['start_time']}，{ev['title']}。")
+                t = self._format_time_for_speech(ev['start_time'])
+                lines.append(f"{day_label}，{t}，{ev['title']}。")
             else:
                 lines.append(f"{day_label}，{ev['title']}。")
 

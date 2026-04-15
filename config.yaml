@@ -1,265 +1,168 @@
-# =============================================================================
-# WakeUpOpenClaw 配置文件
-# =============================================================================
-
-# 唤醒词配置
 wake_up:
-  # 唤醒词引擎选择: "snowboy" 或 "porcupine"
-  engine: "snowboy"
-
-  # --- Snowboy 配置 (engine 为 "snowboy" 时使用) ---
-  # Snowboy 需要从源码编译，不能通过 pip 安装:
-  #   1. sudo apt install swig libatlas-base-dev sox
-  #   2. git clone https://github.com/seasalt-ai/snowboy.git
-  #   3. cd snowboy/swig/Python3 && make
-  #   4. 将 _snowboydetect.so, snowboydetect.py 复制到项目 snowboy/ 目录
-  #   5. 将 resources/ 目录也复制到 snowboy/ 下
+  engine: snowboy
   snowboy:
-    # snowboydetect.so 所在目录 (也是 import 搜索路径)
-    snowboy_lib_path: "./snowboy"
-    # Snowboy common.res 资源文件路径 (必需)
-    resource_path: "./snowboy/resources/common.res"
-    # 唤醒词模型路径 (.umdl 通用模型 / .pmdl 个人模型)
-    # 内置可选: snowboy.umdl, alexa.umdl, jarvis.umdl, computer.umdl 等
-    model_path: "./snowboy/resources/models/snowboy.umdl"
-    # 检测灵敏度 0.0 ~ 1.0
+    snowboy_lib_path: ./snowboy
+    resource_path: ./snowboy/resources/common.res
+    model_path: ./snowboy/resources/models/snowboy.umdl
     sensitivity: 0.5
-    # 音频增益 (默认 1.0，环境嘈杂时可适当增大)
-    audio_gain: 1.0
-    # 是否启用前端音频处理 (降噪，部分模型推荐开启如 alexa.umdl)
+    audio_gain: 1
     apply_frontend: false
-
-  # --- Porcupine 配置 (engine 为 "porcupine" 时使用) ---
-  # 需要安装: pip install pvporcupine
-  # 需要注册获取 Access Key: https://console.picovoice.ai/
   porcupine:
-    # Picovoice Access Key (免费注册获取)
-    access_key: "${PICOVOICE_ACCESS_KEY}"
-    # 自定义唤醒词模型路径 (.ppn 文件，在 Picovoice Console 训练后下载 Linux ARM64 版本)
-    keyword_path: "./models/wakeword.ppn"
-    # 检测灵敏度 0.0 ~ 1.0
+    access_key: ${PICOVOICE_ACCESS_KEY}
+    keyword_path: ./models/wakeword.ppn
     sensitivity: 0.5
-
-# FunASR 语音识别配置
 asr:
-  # FunASR Docker 服务的 WebSocket 地址
-  # 离线服务 (offline): ws://localhost:10095 (无 SSL)
-  # 实时服务 (online/2pass): wss://localhost:10096 (有 SSL)
-  server_url: "ws://localhost:10095"
-  # 是否启用 SSL
-  # 离线服务 (10095) 无 SSL，设为 false
-  # 实时服务 (10096) 默认有 SSL，设为 true
+  server_url: ws://localhost:10095
   ssl_enabled: false
-  # 热词（可选，用空格分隔，如 "小爪 OpenClaw 天气"）
-  hotwords: ""
-  # 识别模式: offline（离线）/ online（在线）/ 2pass（两遍）
-  # 离线服务仅支持 offline；实时服务支持 online 和 2pass
-  mode: "offline"
-  # 是否使用 ITN (逆文本归一化，如 "一百" -> "100")
+  hotwords: ''
+  mode: offline
   use_itn: true
-
-# OpenClaw Agent 配置
 agent:
-  # 调用方式: cli（命令行）或 websocket（WebSocket API）
-  method: "cli"
-  # openclaw CLI 可执行文件路径
-  cli_path: "openclaw"
-  # 会话 ID，保持多轮对话上下文
-  session_id: "voice-assistant"
-  # 思考级别: off / minimal / low / medium / high / xhigh
-  thinking: "medium"
-  # 单次调用超时（秒）
+  method: cli
+  cli_path: openclaw
+  session_id: voice-assistant
+  thinking: medium
   timeout: 120
-  # 是否使用 --local 跳过 Gateway 直接本地执行
-  # Gateway 已启动时建议设为 false；如果 Gateway 不稳定或不需要，设为 true
   local: false
-  # WebSocket Gateway 地址（当 method 为 websocket 时使用）
-  gateway_url: "ws://127.0.0.1:18789"
-  # 发送给 Agent 的系统提示词前缀（会拼接在用户消息前面）
-  # 用于约束 Agent 的回复格式，使其适合语音播报
-  system_prompt: >-
-    你是一个语音助手，用户通过语音与你交流，你的回复将被 TTS 语音合成后播放给用户。
-    请遵守以下规则：
-    1. 用纯文本回复，不要使用 Markdown 格式（不要用 **加粗**、*斜体*、# 标题、- 列表等符号）
-    2. 回复简洁，适合语音朗读，不要过长
-    3. 不要使用 emoji 表情符号
+  gateway_url: ws://127.0.0.1:18789
+  system_prompt: 你是一个语音助手，用户通过语音与你交流，你的回复将被 TTS 语音合成后播放给用户。 请遵守以下规则： 1. 用纯文本回复，不要使用
+    Markdown 格式（不要用 **加粗**、*斜体*、# 标题、- 列表等符号） 2. 回复简洁，适合语音朗读，不要过长 3. 不要使用 emoji 表情符号
     4. 用口语化的自然语言回复
-
-# TTS 语音合成配置 (edge-tts)
 tts:
-  # 语音名称（中文推荐: zh-CN-XiaoxiaoNeural / zh-CN-YunxiNeural / zh-CN-XiaoyiNeural）
-  voice: "zh-CN-XiaoxiaoNeural"
-  # 语速调整 (如 "+10%", "-20%", "+0%" 为默认)
-  rate: "+0%"
-  # 音量调整
-  volume: "+0%"
-  # 播放器命令 (mpv 推荐，也可用 aplay)
-  player: "mpv"
-  # 播放器参数
-  player_args: ["--no-terminal", "--really-quiet"]
-  # HTTP/SOCKS 代理地址 (edge-tts 需要访问 speech.platform.bing.com)
-  # 示例: "http://127.0.0.1:7890" 或 "socks5://127.0.0.1:1080"
-  # 不需要代理时设为 null 或删除此行
-  proxy: "http://127.0.0.1:7890"
-
-# 本地技能配置 (关键词匹配，不经过 AI，快速响应)
-# 每个技能可独立启用/禁用，包含多个操作，每个操作有自己的触发关键词
+  voice: zh-CN-XiaoxiaoNeural
+  rate: +0%
+  volume: +0%
+  player: mpv
+  player_args:
+  - --no-terminal
+  - --really-quiet
+  proxy: http://127.0.0.1:7890
 skills:
   enabled: true
-
-  # 技能 1: 本地音乐播放
   music:
     enabled: true
     options:
-      volume_step: "10%"
+      volume_step: 10%
     actions:
       play:
-        keywords: ["播放歌曲", "播放本地歌曲", "放首歌", "来首歌", "播放音乐", "播放"]
+        keywords:
+        - 播放歌曲
+        - 播放本地歌曲
+        - 放首歌
+        - 来首歌
+        - 播放音乐
+        - 播放
       play_favorite:
-        keywords: ["播放收藏", "播放喜欢的歌"]
+        keywords:
+        - 播放收藏
+        - 播放喜欢的歌
       next_track:
-        keywords: ["下一首", "下一曲", "切歌"]
+        keywords:
+        - 下一首
+        - 下一曲
+        - 切歌
       prev_track:
-        keywords: ["上一首", "上一曲"]
+        keywords:
+        - 上一首
+        - 上一曲
       stop:
-        keywords: ["停止播放", "别播了", "安静"]
-        reply: "好的，已停止播放"
+        keywords:
+        - 停止播放
+        - 别播了
+        - 安静
+        - 停
+        reply: 好的，已停止播放
       volume_up:
-        keywords: ["大声一点", "音量调大", "声音大一点"]
-        reply: "好的，已调大音量"
+        keywords:
+        - 大声一点
+        - 音量调大
+        - 声音大一点
+        reply: 好的，已调大音量
       volume_down:
-        keywords: ["小声一点", "音量调小", "声音小一点"]
-        reply: "好的，已调小音量"
-
-  # 技能 2: 日程管理
+        keywords:
+        - 小声一点
+        - 音量调小
+        - 声音小一点
+        reply: 好的，已调小音量
   calendar:
     enabled: true
     actions:
       query_today:
-        keywords: ["今天有什么安排", "今天日程", "今日安排", "今天有什么事"]
+        keywords:
+        - 今天有什么安排
+        - 今天日程
+        - 今日安排
+        - 今天有什么事
       query_tomorrow:
-        keywords: ["明天有什么安排", "明天日程", "明天有什么事"]
-
-  # 技能 3: 对话管理
+        keywords:
+        - 明天有什么安排
+        - 明天日程
+        - 明天有什么事
   conversation:
     enabled: true
     actions:
       new_conversation:
-        keywords: ["新对话", "重新开始"]
-        reply: "好的，已开启新对话"
-
-  # 技能 4: 通用工具
+        keywords:
+        - 新对话
+        - 重新开始
+        - 开始新对话
+        reply: 好的，已开启新对话
   utility:
     enabled: true
     actions:
       current_time:
-        keywords: ["现在几点", "几点了", "报时"]
-
-# 音频配置
+        keywords:
+        - 现在几点
+        - 几点了
+        - 报时
+        - 今天几号
 audio:
-  # 采样率 (Hz)，FunASR / Porcupine / Snowboy 都使用 16000
   sample_rate: 16000
-  # 声道数
   channels: 1
-  # 每次读取的帧数 (会被唤醒词引擎的 frame_length 覆盖)
   chunk_size: 512
-  # 音频格式
-  format: "int16"
-  # 输入设备索引 (null 表示使用系统默认设备)
+  format: int16
   input_device_index: null
-
-# 多轮对话配置
 conversation:
-  # 对话模式: "single"（单轮）或 "multi"（多轮）
-  # single: 唤醒 -> 说话 -> AI回复 -> 回到唤醒词监听
-  # multi:  唤醒 -> 说话 -> AI回复 -> 等待用户继续 -> ... -> 超时后回到唤醒词监听
-  mode: "single"
-  # 静默超时（秒），无语音输入超过此时间则退出多轮对话
+  mode: single
   silence_timeout: 15
-  # 最大对话轮次
   max_rounds: 20
-  # 是否播放提示音
   prompt_sound: true
-  # 唤醒提示音 (检测到唤醒词后播放，提示用户可以开始说话)
-  sound_wake: "./static/beep_hi.wav"
-  # 录音结束提示音 (语音输入结束后播放，提示正在处理)
-  sound_done: "./static/beep_lo.wav"
-  # 唤醒提示语 (仅当 sound_wake 文件不存在时回退使用 TTS 朗读)
-  prompt_text: "我在"
-  # VAD 端点检测: 静默持续多久判定说话结束（秒）
-  # 建议 1.0~2.0，太短会截断语句，太长等待感明显
+  sound_wake: ./static/beep_hi.wav
+  sound_done: ./static/beep_lo.wav
+  prompt_text: 我在
   vad_silence_timeout: 1.5
-  # VAD 端点检测: 能量阈值，低于此值视为静默
-  # 需根据麦克风和环境噪音调整；安静环境 300~500，嘈杂环境 800~1500
-  # 设为 0 表示完全依赖 FunASR 服务端 VAD
   vad_energy_threshold: 500
-  # AI 回复后等待用户继续说话的时间（秒）
-  # 在此时间内未检测到语音活动则退出多轮对话，回到唤醒词监听
-  continue_wait_timeout: 5.0
-  # 单个对话的最大轮次，超过后自动归档旧对话并开启新对话
-  # 设为 0 表示不自动分割
+  continue_wait_timeout: 5
   max_history_rounds: 30
-  # 是否允许语音打断 TTS 播放（Barge-in）
-  # 开启后，AI 回复播放期间可以说唤醒词来打断，直接进入新一轮对话
   barge_in: false
-  # 是否启用流式 TTS（分句合成，边合成边播放）
-  # 开启后长文本回复的首字延迟显著降低，但短回复无明显区别
   streaming_tts: false
-  # 免打扰时间段（24小时制 HH:MM）
-  # 在此时间段内不接受语音唤醒，Web 聊天不受影响
-  # 支持跨午夜，如 22:30 ~ 07:30
   do_not_disturb:
     enabled: true
-    start: "22:30"
-    end: "07:30"
-
-# 日程日历配置
+    start: '22:30'
+    end: 07:30
 calendar:
-  # 是否启用日程到时语音提醒
   remind_enabled: true
-  # 提醒检查间隔（秒）
   remind_check_interval: 60
-  # 默认提前提醒分钟数
   default_remind_minutes: 5
-  # 微信提醒配置（通过 openclaw message send 发送）
   wechat_remind:
-    # 是否启用微信提醒
     enabled: true
-    # openclaw message send 的 --target 参数（chat_id 格式）
-    target: "o9cq80wES_EZ3kSkYZ08KgWfiM6M@im.wechat"
-
-# Web 聊天界面配置
+    target: o9cq80wES_EZ3kSkYZ08KgWfiM6M@im.wechat
 web:
-  # 是否启用 Web 服务
   enabled: true
-  # 监听地址 (0.0.0.0 允许局域网访问)
-  host: "0.0.0.0"
-  # 监听端口
+  host: 0.0.0.0
   port: 8084
-  # Web 端的 AI 回复是否也通过扬声器播报
   tts_on_web: false
-
-# 数据库配置 (MySQL，用于对话历史持久化)
-# 敏感字段支持 ${ENV_VAR} 语法引用环境变量
 database:
-  host: "localhost"
+  host: localhost
   port: 3306
-  user: "zlpi"
-  password: "${MYSQL_PASSWORD}"
-  database: "ZLPI"
+  user: zlpi
+  password: ${MYSQL_PASSWORD}
+  database: ZLPI
   pool_size: 5
-
-# 日志配置
 logging:
-  # 全局日志级别: DEBUG / INFO / WARNING / ERROR / CRITICAL
-  level: "INFO"
-  # 是否输出到终端
+  level: INFO
   console: true
-  # 终端是否使用彩色输出
   console_color: true
-  # 日志文件路径（留空则不写文件）
-  file: "logs/assistant.log"
-  # 单个日志文件最大大小
-  max_file_size: "10MB"
-  # 保留的历史日志文件数量（自动轮转）
+  file: logs/assistant.log
+  max_file_size: 10MB
   backup_count: 5

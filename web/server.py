@@ -153,8 +153,6 @@ class WebServer:
         if self.db:
             try:
                 conv = await self.db.get_or_create_active_conversation("web")
-                # 同步 session-id 到 agent
-                self.agent_client.session_id = conv["session_id"]
             except Exception as e:
                 logger.debug("获取对话失败: %s", e)
 
@@ -169,7 +167,8 @@ class WebServer:
 
         # 调用 OpenClaw
         start_time = time.time()
-        reply = await self.agent_client.send_message(message)
+        conv_sid = conv["session_id"] if conv else ""
+        reply = await self.agent_client.send_message(message, session_id=conv_sid)
         elapsed = time.time() - start_time
         duration_ms = int(elapsed * 1000)
 
@@ -401,7 +400,7 @@ class WebServer:
 
         # 先返回响应，延迟 1 秒后在后台执行重启
         # 避免 supervisorctl restart 杀掉当前进程导致响应无法返回
-        asyncio.get_event_loop().call_later(
+        asyncio.get_running_loop().call_later(
             1.0,
             lambda: asyncio.ensure_future(
                 self._run_cmd("supervisorctl", "restart", "WakeUpOpenClaw")
@@ -418,7 +417,7 @@ class WebServer:
     async def _handle_restart(self, request: web.Request) -> web.Response:
         """仅重启服务（不拉取更新）。"""
         # 先返回响应，延迟 1 秒后在后台执行重启
-        asyncio.get_event_loop().call_later(
+        asyncio.get_running_loop().call_later(
             1.0,
             lambda: asyncio.ensure_future(
                 self._run_cmd("supervisorctl", "restart", "WakeUpOpenClaw")

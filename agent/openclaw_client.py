@@ -63,7 +63,7 @@ class OpenClawClient:
         self.gateway_url = gateway_url
         self.system_prompt = system_prompt.strip()
 
-    async def send_message(self, message: str) -> str:
+    async def send_message(self, message: str, session_id: str = None) -> str:
         """
         向 OpenClaw Agent 发送消息并获取回复。
 
@@ -71,6 +71,8 @@ class OpenClawClient:
         ----------
         message : str
             用户消息文本
+        session_id : str, optional
+            会话 ID。如果不传则使用实例默认值。
 
         Returns
         -------
@@ -81,13 +83,14 @@ class OpenClawClient:
             logger.warning("收到空消息，跳过发送")
             return ""
 
+        sid = session_id or self.session_id
         logger.info("发送到 OpenClaw: %s", message)
         start_time = time.time()
 
         if self.method == "cli":
-            result = await self._send_via_cli(message)
+            result = await self._send_via_cli(message, sid)
         elif self.method == "websocket":
-            result = await self._send_via_websocket(message)
+            result = await self._send_via_websocket(message, sid)
         else:
             logger.error("不支持的调用方式: %s", self.method)
             return f"错误: 不支持的调用方式 '{self.method}'"
@@ -103,7 +106,7 @@ class OpenClawClient:
 
         return result
 
-    async def _send_via_cli(self, message: str) -> str:
+    async def _send_via_cli(self, message: str, session_id: str = "") -> str:
         """
         通过 CLI 命令调用 OpenClaw Agent。
 
@@ -122,7 +125,7 @@ class OpenClawClient:
             self.cli_path,
             "agent",
             "--message", full_message,
-            "--session-id", self.session_id,
+            "--session-id", session_id or self.session_id,
             "--thinking", self.thinking,
             "--json",
         ]
@@ -404,7 +407,7 @@ class OpenClawClient:
 
         return ""
 
-    async def _send_via_websocket(self, message: str) -> str:
+    async def _send_via_websocket(self, message: str, session_id: str = "") -> str:
         """
         通过 WebSocket API 调用 OpenClaw Gateway。
 

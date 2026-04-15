@@ -374,8 +374,6 @@ class VoiceAssistant:
         # 加载或创建活跃对话
         try:
             self._current_conversation = await self.db.get_or_create_active_conversation("voice")
-            # 将数据库中的 session-id 同步到 OpenClaw 客户端
-            self.agent_client.session_id = self._current_conversation["session_id"]
             logger.info(
                 "当前对话 #%d (session=%s, 轮次=%d)",
                 self._current_conversation["id"],
@@ -561,7 +559,9 @@ class VoiceAssistant:
             # ---- THINKING: 调用 OpenClaw ----
             self._set_state(State.THINKING)
             start_time = time.time()
-            reply = await self.agent_client.send_message(recognized_text)
+            # 获取当前对话的 session_id
+            current_sid = (self._current_conversation or {}).get("session_id", "")
+            reply = await self.agent_client.send_message(recognized_text, session_id=current_sid)
             duration_ms = int((time.time() - start_time) * 1000)
 
             if not reply:
@@ -642,7 +642,6 @@ class VoiceAssistant:
                     round_count,
                 )
                 self._current_conversation = await self.db.start_new_conversation("voice")
-                self.agent_client.session_id = self._current_conversation["session_id"]
                 # 语音提示
                 await self.tts_engine.speak("当前对话已较长，已为您开启新对话")
         except Exception as e:
@@ -659,7 +658,6 @@ class VoiceAssistant:
         """
         try:
             self._current_conversation = await self.db.start_new_conversation(source)
-            self.agent_client.session_id = self._current_conversation["session_id"]
             return self._current_conversation
         except Exception as e:
             logger.error("开启新对话失败: %s", e)
@@ -731,6 +729,8 @@ class VoiceAssistant:
                     await task
                 except (asyncio.CancelledError, Exception):
                     pass
+            # 确保唤醒词监听线程停止（cancel Future 不能中断阻塞线程）
+            self.detector.stop()
         finally:
             self.tts_engine._remove_file(audio_file)
 
@@ -880,7 +880,7 @@ class VoiceAssistant:
         return recognized_text.strip() if recognized_text else ""
 
     def shutdown(self) -> None:
-        """优雅关闭。"""
+        """优雅关闭（同步部分）。异步资源在 main() finally 中清理。"""
         if self._state == State.SHUTDOWN:
             return  # 避免重复关闭
 
@@ -889,31 +889,10 @@ class VoiceAssistant:
         self._set_state(State.SHUTDOWN)
         self.detector.stop()
 
-        # 停止 Web 服务（异步操作，在事件循环中调度）
-        if self.web_server:
-            try:
-                loop = asyncio.get_event_loop()
-                if loop.is_running():
-                    loop.create_task(self.web_server.stop())
-                else:
-                    loop.run_until_complete(self.web_server.stop())
-            except Exception as e:
-                logger.debug("停止 Web 服务时出错: %s", e)
-
-        # 释放资源
+        # 释放同步资源
         self.recorder.close()
         self.detector.cleanup()
         self.tts_engine.cleanup()
-
-        # 关闭数据库（异步）
-        try:
-            loop = asyncio.get_event_loop()
-            if loop.is_running():
-                loop.create_task(self.db.close())
-            else:
-                loop.run_until_complete(self.db.close())
-        except Exception as e:
-            logger.debug("关闭数据库时出错: %s", e)
 
         logger.info("助手已关闭")
 
@@ -972,7 +951,22 @@ def main():
         logger.info("收到键盘中断")
     finally:
         assistant.shutdown()
-        # 清理异步任务
+        # 清理异步资源（Web 服务和数据库连接池）
+        async def _async_cleanup():
+            try:
+                if assistant.web_server:
+                    await assistant.web_server.stop()
+            except Exception as e:
+                logger.debug("停止 Web 服务时出错: %s", e)
+            try:
+                await assistant.db.close()
+            except Exception as e:
+                logger.debug("关闭数据库时出错: %s", e)
+        try:
+            loop.run_until_complete(_async_cleanup())
+        except Exception:
+            pass
+        # 取消剩余异步任务
         pending = asyncio.all_tasks(loop)
         for task in pending:
             task.cancel()

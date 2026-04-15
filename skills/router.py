@@ -7,6 +7,7 @@
 
 import asyncio
 import datetime
+import re
 from dataclasses import dataclass, field
 from typing import Callable, Optional, TYPE_CHECKING
 
@@ -95,9 +96,17 @@ class SkillRouter:
             "prev_track": self._action_prev_track,
         }
 
+    # 用于去除标点的正则（中英文标点 + 空白）
+    _PUNCTUATION_RE = re.compile(
+        r'[。，！？、；：""''（）【】《》\s.!?,;:\'"()\[\]{}\-~…]+'
+    )
+
     async def match(self, text: str) -> Optional[SkillResult]:
         """
         匹配用户输入，返回执行结果或 None（交给 AI）。
+
+        对用户输入去除标点后再匹配关键词，避免 FunASR 识别结果中的
+        标点符号（如"播放本地歌曲。"中的"。"）干扰匹配。
 
         Parameters
         ----------
@@ -112,16 +121,17 @@ class SkillRouter:
         if not self.enabled or not text:
             return None
 
-        text_lower = text.strip().lower()
+        # 去除标点后用于匹配
+        text_clean = self._PUNCTUATION_RE.sub("", text.strip().lower())
 
         for cmd in self.commands:
             for keyword in cmd.keywords:
-                if keyword.lower() in text_lower:
+                if keyword.lower() in text_clean:
                     logger.info(
                         "技能匹配: '%s' -> action=%s (keyword='%s')",
                         text, cmd.action, keyword,
                     )
-                    return await self._execute(cmd, text)
+                    return await self._execute(cmd, text)  # 传原始文本
 
         return None
 
@@ -276,8 +286,7 @@ class SkillRouter:
                     if remainder.startswith(prefix):
                         remainder = remainder[len(prefix):].strip()
                 # 去除 FunASR 识别结果中的标点符号
-                import re as _re
-                remainder = _re.sub(
+                remainder = re.sub(
                     r'[。，！？、；：""''（）【】《》\s.!?,;:\'"()\[\]{}\-~…]+',
                     '', remainder,
                 )

@@ -74,6 +74,10 @@
 |------|------|------|
 | 配置敏感值加密 | done | `${ENV_VAR}` 语法引用环境变量，密码不入 git |
 | Web 配置安全 | done | 页面显示 `${VAR}` 原始文本，不暴露实际密码 |
+| session-id 竞态修复 | done | send_message 传入 session_id 参数，不再修改共享状态 |
+| barge-in 线程泄漏修复 | done | 取消 Future 后调用 detector.stop() 中断阻塞线程 |
+| asyncio 事件循环安全 | done | get_event_loop → get_running_loop，异步清理移到 main() finally |
+| skills 标点匹配修复 | done | match() 去除标点后匹配，避免 FunASR 识别标点干扰 |
 
 ### 第六阶段：日程管理（已完成）
 

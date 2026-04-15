@@ -44,6 +44,24 @@
     display: flex;
     flex-direction: column;
     flex-shrink: 0;
+    transition: transform 0.25s ease;
+  }
+  .sidebar-toggle {
+    display: none;
+    background: none;
+    border: none;
+    color: #e0e0e0;
+    font-size: 22px;
+    cursor: pointer;
+    padding: 0 8px;
+    line-height: 1;
+  }
+  .sidebar-overlay {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.5);
+    z-index: 49;
   }
   .sidebar-header {
     padding: 12px;
@@ -224,7 +242,18 @@
 
   /* 移动端 */
   @media (max-width: 640px) {
-    .sidebar { display: none; }
+    .sidebar {
+      position: fixed;
+      top: 0; left: 0; bottom: 0;
+      z-index: 50;
+      transform: translateX(-100%);
+      width: 260px;
+      box-shadow: 4px 0 20px rgba(0,0,0,0.5);
+    }
+    .sidebar.open { transform: translateX(0); }
+    .sidebar-overlay.open { display: block; }
+    .sidebar-toggle { display: inline-block; }
+    .msg { max-width: 90%; }
   }
 </style>
 </head>
@@ -233,6 +262,7 @@
 <header>
   <h1>WakeUpOpenClaw</h1>
   <nav>
+    <button class="sidebar-toggle" onclick="toggleSidebar()">&#9776;</button>
     <a href="/" class="active">聊天</a>
     <a href="/config">配置</a>
     <a href="/logs">日志</a>
@@ -245,7 +275,8 @@
 </header>
 
 <div class="main-layout">
-  <div class="sidebar">
+  <div class="sidebar-overlay" id="sidebar-overlay" onclick="closeSidebar()"></div>
+  <div class="sidebar" id="sidebar">
     <div class="sidebar-header">
       <span>对话列表</span>
       <button class="btn-new" onclick="newConversation()">+ 新对话</button>
@@ -383,6 +414,7 @@ async function deleteConversation(convId, title) {
 async function loadConversation(convId) {
   activeConvId = convId;
   chatBox.innerHTML = '';
+  closeSidebar();
   try {
     const res = await fetch('/api/conversations/' + convId + '/messages');
     const data = await res.json();
@@ -406,6 +438,7 @@ async function newConversation() {
       activeConvId = data.conversation.id;
       chatBox.innerHTML = '<div class="empty-hint">新对话已创建，开始聊天吧</div>';
       loadConversations();
+      closeSidebar();
     }
   } catch(e) {}
 }
@@ -495,6 +528,16 @@ async function loadVolume() {
   } catch(e) {}
 }
 loadVolume();
+
+// 移动端侧边栏控制
+function toggleSidebar() {
+  document.getElementById('sidebar').classList.toggle('open');
+  document.getElementById('sidebar-overlay').classList.toggle('open');
+}
+function closeSidebar() {
+  document.getElementById('sidebar').classList.remove('open');
+  document.getElementById('sidebar-overlay').classList.remove('open');
+}
 </script>
 </body>
 </html>

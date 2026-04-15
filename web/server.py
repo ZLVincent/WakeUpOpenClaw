@@ -165,7 +165,36 @@ class WebServer:
             except Exception as e:
                 logger.debug("保存用户消息失败: %s", e)
 
-        # 调用 OpenClaw
+        # 先尝试技能路由匹配（与语音端一致）
+        if self._assistant and self._assistant.skill_router:
+            skill_result = await self._assistant.skill_router.match(message)
+            if skill_result:
+                reply = skill_result.text or ""
+                logger.info("Web 技能命中: action=%s, reply=%s", skill_result.action, reply[:50])
+
+                # 特殊动作处理
+                if skill_result.action == "new_conversation":
+                    await self._assistant.start_new_conversation("web")
+
+                # 保存 AI 回复
+                if self.db and conv:
+                    try:
+                        await self.db.add_message(conv["id"], "assistant", reply, "web")
+                    except Exception:
+                        pass
+
+                # 可选 TTS 播报
+                if self.tts_on_web and self.tts_engine and reply:
+                    asyncio.create_task(self.tts_engine.speak(reply))
+
+                return web.json_response({
+                    "reply": reply,
+                    "duration": 0,
+                    "conversation_id": conv["id"] if conv else None,
+                    "skill": skill_result.action,
+                })
+
+        # 技能未命中，调用 OpenClaw AI
         start_time = time.time()
         conv_sid = conv["session_id"] if conv else ""
         reply = await self.agent_client.send_message(message, session_id=conv_sid)

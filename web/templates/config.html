@@ -392,17 +392,18 @@ function renderSection(sectionKey, sectionData) {
   body.className = 'section-body';
 
   if (typeof sectionData === 'object' && sectionData !== null && !Array.isArray(sectionData)) {
+    // skills 段特殊渲染为分组卡片
+    if (sectionKey === 'skills') {
+      for (const [k, v] of Object.entries(sectionData)) {
+        if (k === 'enabled') {
+          body.appendChild(renderField(k, v, 'skills.enabled'));
+        } else if (typeof v === 'object' && v !== null) {
+          body.appendChild(renderSkillGroupCard(k, v));
+        }
+      }
+    } else {
     for (const [k, v] of Object.entries(sectionData)) {
-      // skills.commands 特殊渲染为卡片列表
-      if (sectionKey === 'skills' && k === 'commands' && Array.isArray(v)) {
-        const label = document.createElement('div');
-        label.style.cssText = 'font-size:13px;color:#e94560;padding:8px 0 4px;';
-        label.textContent = '技能列表';
-        body.appendChild(label);
-        v.forEach((cmd, idx) => {
-          body.appendChild(renderSkillCard(cmd, idx));
-        });
-      } else if (typeof v === 'object' && v !== null && !Array.isArray(v)) {
+      if (typeof v === 'object' && v !== null && !Array.isArray(v)) {
         // 嵌套对象（如 wake_up.snowboy, wake_up.porcupine）
         const subHeader = document.createElement('div');
         subHeader.style.cssText = 'font-size:13px;color:#e94560;padding:8px 0 4px;border-top:1px solid #1a1a2e;margin-top:4px;';
@@ -415,6 +416,7 @@ function renderSection(sectionKey, sectionData) {
         body.appendChild(renderField(k, v, sectionKey + '.' + k));
       }
     }
+    } // close else for non-skills sections
   } else {
     body.appendChild(renderField(sectionKey, sectionData, sectionKey));
   }
@@ -429,77 +431,121 @@ function renderSection(sectionKey, sectionData) {
   return sec;
 }
 
-function renderSkillCard(cmd, idx) {
-  const card = document.createElement('div');
-  card.className = 'skill-card' + (cmd.enabled === false ? ' disabled' : '');
-  card.dataset.skillIdx = idx;
+const skillDisplayNames = {
+  music: '本地音乐播放', calendar: '日程管理',
+  conversation: '对话管理', utility: '通用工具',
+};
 
-  // 头部：action 名 + toggle
+function renderSkillGroupCard(skillName, skillCfg) {
+  const card = document.createElement('div');
+  card.className = 'skill-card' + (skillCfg.enabled === false ? ' disabled' : '');
+  card.dataset.skillName = skillName;
+
+  // 头部：显示名 + toggle
   const hdr = document.createElement('div');
   hdr.className = 'skill-card-header';
-
   const name = document.createElement('span');
   name.className = 'action-name';
-  name.textContent = cmd.action || '(未命名)';
+  name.textContent = (skillDisplayNames[skillName] || skillName) + ' (' + skillName + ')';
   hdr.appendChild(name);
-
   const tog = document.createElement('div');
-  tog.className = 'skill-toggle' + (cmd.enabled !== false ? ' on' : '');
-  tog.dataset.skillIdx = idx;
-  tog.onclick = function() {
-    this.classList.toggle('on');
-    card.classList.toggle('disabled');
-  };
+  tog.className = 'skill-toggle' + (skillCfg.enabled !== false ? ' on' : '');
+  tog.dataset.skillName = skillName;
+  tog.onclick = function() { this.classList.toggle('on'); card.classList.toggle('disabled'); };
   hdr.appendChild(tog);
   card.appendChild(hdr);
 
-  // 关键词标签
-  if (cmd.keywords && cmd.keywords.length) {
-    const kwRow = document.createElement('div');
-    kwRow.className = 'skill-detail';
-    const kwLabel = document.createElement('label');
-    kwLabel.textContent = '关键词:';
-    kwRow.appendChild(kwLabel);
-    const kwTags = document.createElement('span');
-    kwTags.className = 'skill-keywords';
-    for (const kw of cmd.keywords) {
-      const tag = document.createElement('span');
-      tag.className = 'skill-kw-tag';
-      tag.textContent = kw;
-      kwTags.appendChild(tag);
-    }
-    kwRow.appendChild(kwTags);
-    card.appendChild(kwRow);
-  }
-
-  // 回复文本
-  if (cmd.reply) {
-    const replyRow = document.createElement('div');
-    replyRow.className = 'skill-detail';
-    replyRow.innerHTML = '<label>回复:</label>' + escapeHtml(cmd.reply);
-    card.appendChild(replyRow);
-  }
-
   // options
-  if (cmd.options && typeof cmd.options === 'object' && Object.keys(cmd.options).length) {
-    for (const [ok, ov] of Object.entries(cmd.options)) {
-      const optRow = document.createElement('div');
-      optRow.className = 'skill-option-row';
-      const keySpan = document.createElement('span');
-      keySpan.className = 'opt-key';
-      keySpan.textContent = ok + ':';
-      optRow.appendChild(keySpan);
-      const inp = document.createElement('input');
-      inp.type = 'text';
-      inp.value = ov;
-      inp.dataset.skillIdx = idx;
-      inp.dataset.optKey = ok;
-      optRow.appendChild(inp);
-      card.appendChild(optRow);
+  const opts = skillCfg.options || {};
+  for (const [ok, ov] of Object.entries(opts)) {
+    const row = document.createElement('div');
+    row.className = 'skill-option-row';
+    const keySpan = document.createElement('span');
+    keySpan.className = 'opt-key';
+    keySpan.textContent = ok + ':';
+    row.appendChild(keySpan);
+    const inp = document.createElement('input');
+    inp.type = 'text'; inp.value = ov;
+    inp.dataset.skillName = skillName;
+    inp.dataset.optKey = ok;
+    row.appendChild(inp);
+    card.appendChild(row);
+  }
+
+  // actions
+  const actions = skillCfg.actions || {};
+  for (const [actionName, actionCfg] of Object.entries(actions)) {
+    if (typeof actionCfg !== 'object') continue;
+    const aDiv = document.createElement('div');
+    aDiv.className = 'skill-detail';
+    aDiv.style.borderTop = '1px solid #333';
+    aDiv.style.paddingTop = '6px';
+    aDiv.style.marginTop = '6px';
+
+    // action 名
+    const aLabel = document.createElement('label');
+    aLabel.textContent = actionName;
+    aLabel.style.color = '#82b1ff';
+    aLabel.style.fontWeight = 'bold';
+    aDiv.appendChild(aLabel);
+
+    // 关键词标签编辑器
+    const kwContainer = document.createElement('div');
+    kwContainer.className = 'skill-keywords';
+    kwContainer.style.marginTop = '4px';
+    kwContainer.dataset.skillName = skillName;
+    kwContainer.dataset.actionName = actionName;
+
+    const kws = actionCfg.keywords || [];
+    for (const kw of kws) {
+      kwContainer.appendChild(createKeywordTag(kw, kwContainer));
     }
+
+    // 添加关键词输入框
+    const addInput = document.createElement('input');
+    addInput.type = 'text';
+    addInput.placeholder = '+ 添加';
+    addInput.style.cssText = 'width:70px;padding:2px 6px;border:1px dashed #555;border-radius:10px;background:transparent;color:#ccc;font-size:11px;outline:none;';
+    addInput.onkeydown = function(e) {
+      if (e.key === 'Enter' && this.value.trim()) {
+        e.preventDefault();
+        kwContainer.insertBefore(createKeywordTag(this.value.trim(), kwContainer), this);
+        this.value = '';
+      }
+    };
+    kwContainer.appendChild(addInput);
+    aDiv.appendChild(kwContainer);
+
+    // reply
+    if (actionCfg.reply) {
+      const replyRow = document.createElement('div');
+      replyRow.style.cssText = 'margin-top:4px;font-size:11px;color:#888;';
+      const replyInput = document.createElement('input');
+      replyInput.type = 'text'; replyInput.value = actionCfg.reply;
+      replyInput.style.cssText = 'width:100%;padding:2px 6px;border:1px solid #333;border-radius:3px;background:#16213e;color:#e0e0e0;font-size:11px;outline:none;margin-top:2px;';
+      replyInput.dataset.skillName = skillName;
+      replyInput.dataset.actionName = actionName;
+      replyInput.dataset.field = 'reply';
+      const rl = document.createElement('label');
+      rl.textContent = '回复: ';
+      rl.style.color = '#666';
+      replyRow.appendChild(rl);
+      replyRow.appendChild(replyInput);
+      aDiv.appendChild(replyRow);
+    }
+
+    card.appendChild(aDiv);
   }
 
   return card;
+}
+
+function createKeywordTag(text, container) {
+  const tag = document.createElement('span');
+  tag.className = 'skill-kw-tag';
+  tag.style.cursor = 'default';
+  tag.innerHTML = escapeHtml(text) + ' <span style="cursor:pointer;margin-left:3px;color:#e94560;font-weight:bold;" onclick="this.parentElement.remove()">&times;</span>';
+  return tag;
 }
 
 function escapeHtml(text) {
@@ -538,25 +584,44 @@ function collectConfig() {
     obj[path[path.length - 1]] = val;
   });
 
-  // 收集 skill 卡片状态
-  if (config.skills && Array.isArray(config.skills.commands)) {
-    document.querySelectorAll('.skill-card').forEach(card => {
-      const idx = parseInt(card.dataset.skillIdx);
-      if (idx >= 0 && idx < config.skills.commands.length) {
-        // 收集 enabled 状态
-        const tog = card.querySelector('.skill-toggle');
-        if (tog) {
-          config.skills.commands[idx].enabled = tog.classList.contains('on');
-        }
-        // 收集 options
-        card.querySelectorAll('.skill-option-row input').forEach(inp => {
-          const optKey = inp.dataset.optKey;
-          if (optKey) {
-            if (!config.skills.commands[idx].options) config.skills.commands[idx].options = {};
-            config.skills.commands[idx].options[optKey] = inp.value;
-          }
+  // 收集 skill 分组卡片状态
+  if (config.skills) {
+    document.querySelectorAll('.skill-card[data-skill-name]').forEach(card => {
+      const sn = card.dataset.skillName;
+      if (!sn || !config.skills[sn]) return;
+
+      // enabled toggle
+      const tog = card.querySelector('.skill-toggle');
+      if (tog) config.skills[sn].enabled = tog.classList.contains('on');
+
+      // options
+      card.querySelectorAll('.skill-option-row input[data-opt-key]').forEach(inp => {
+        if (!config.skills[sn].options) config.skills[sn].options = {};
+        config.skills[sn].options[inp.dataset.optKey] = inp.value;
+      });
+
+      // actions: 收集关键词和回复
+      if (!config.skills[sn].actions) config.skills[sn].actions = {};
+      card.querySelectorAll('.skill-keywords[data-action-name]').forEach(kwc => {
+        const an = kwc.dataset.actionName;
+        if (!config.skills[sn].actions[an]) config.skills[sn].actions[an] = {};
+        // 收集关键词标签（排除输入框）
+        const kws = [];
+        kwc.querySelectorAll('.skill-kw-tag').forEach(tag => {
+          // 提取纯文本（去掉删除按钮的 x）
+          const text = tag.childNodes[0].textContent.trim();
+          if (text) kws.push(text);
         });
-      }
+        config.skills[sn].actions[an].keywords = kws;
+      });
+
+      // 收集 reply 输入
+      card.querySelectorAll('input[data-field="reply"]').forEach(inp => {
+        const an = inp.dataset.actionName;
+        if (an && config.skills[sn].actions[an]) {
+          config.skills[sn].actions[an].reply = inp.value;
+        }
+      });
     });
   }
 

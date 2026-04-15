@@ -274,8 +274,10 @@ class VoiceAssistant:
 
         # 技能路由
         skills_cfg = config.get("skills", {})
+        # 提取技能分组配置（排除 enabled 全局开关字段）
+        skills_groups = {k: v for k, v in skills_cfg.items() if k != "enabled" and isinstance(v, dict)}
         self.skill_router = SkillRouter(
-            commands=skills_cfg.get("commands", []),
+            skills_config=skills_groups,
             enabled=skills_cfg.get("enabled", True),
             database=self.db,
             music_player=self.music_player,

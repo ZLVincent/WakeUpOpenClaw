@@ -1,8 +1,8 @@
 """
 技能路由模块
 
-在发送给 OpenClaw 之前进行本地关键词匹配。
-匹配到的指令直接本地执行，不走 AI，响应更快。
+将技能按业务分组（音乐、日程、对话、工具），每个技能包含多个操作。
+在发送给 OpenClaw 之前进行本地关键词匹配，命中则本地执行，不走 AI。
 """
 
 import asyncio
@@ -20,98 +20,141 @@ from utils.logger import get_logger
 logger = get_logger("skills")
 
 
+# Skill 中文显示名
+SKILL_DISPLAY_NAMES = {
+    "music": "本地音乐播放",
+    "calendar": "日程管理",
+    "conversation": "对话管理",
+    "utility": "通用工具",
+}
+
+
 @dataclass
 class SkillResult:
     """技能执行结果。"""
     text: str = ""           # 回复文本（TTS 朗读）
-    action: str = ""         # 动作标识
+    action: str = ""         # 动作标识 (如 "play_music", "volume_up")
+    skill: str = ""          # 所属技能名 (如 "music", "calendar")
     handled: bool = True     # 是否已处理（False 表示交给 AI）
-    extra: dict = field(default_factory=dict)  # 附加数据
+    extra: dict = field(default_factory=dict)
 
 
 @dataclass
-class SkillCommand:
-    """一条技能指令定义。"""
-    action: str = ""
-    enabled: bool = True
-    keywords: list[str] = field(default_factory=list)
-    reply: str = ""
-    options: dict = field(default_factory=dict)
+class SkillAction:
+    """一个技能内的具体操作。"""
+    name: str = ""                                    # 操作名如 "play", "volume_up"
+    keywords: list[str] = field(default_factory=list) # 触发关键词列表
+    reply: str = ""                                   # 默认回复文本
+
+
+@dataclass
+class Skill:
+    """一个完整的技能。"""
+    name: str = ""                                    # 技能名如 "music"
+    enabled: bool = True                              # 是否启用
+    options: dict = field(default_factory=dict)        # 自定义配置参数
+    actions: list[SkillAction] = field(default_factory=list)
+
+    @property
+    def display_name(self) -> str:
+        return SKILL_DISPLAY_NAMES.get(self.name, self.name)
 
 
 class SkillRouter:
     """
     技能路由器。
 
-    根据配置中的关键词列表匹配用户输入，
+    根据分组配置中的关键词匹配用户输入，
     匹配成功则执行对应的内置动作。
 
     Parameters
     ----------
-    commands : list[dict]
-        技能指令配置列表
+    skills_config : dict
+        config.yaml 中 skills 段（不含 enabled 字段）的技能分组配置
     enabled : bool
-        是否启用技能路由
+        全局开关
     database : ChatDatabase | None
-        数据库实例，用于日程查询
+        数据库实例
     music_player : MusicPlayer | None
         音乐播放器实例
     """
-
-    def __init__(self, commands: list[dict] = None, enabled: bool = True,
-                 database=None, music_player=None):
-        self.enabled = enabled
-        self.db = database
-        self.music_player = music_player
-        self.commands: list[SkillCommand] = []
-        self._action_handlers: dict[str, Callable] = {}
-
-        # 注册内置动作处理器
-        self._register_builtin_actions()
-
-        # 解析配置
-        if commands:
-            for cmd in commands:
-                self.commands.append(SkillCommand(
-                    action=cmd.get("action", ""),
-                    enabled=cmd.get("enabled", True),
-                    keywords=cmd.get("keywords", []),
-                    reply=cmd.get("reply", ""),
-                    options=cmd.get("options", {}),
-                ))
-
-        if self.enabled:
-            active = sum(1 for c in self.commands if c.enabled)
-            logger.info("技能路由已启用，共 %d 条指令（%d 条启用）", len(self.commands), active)
-
-    def _register_builtin_actions(self) -> None:
-        """注册内置动作处理器。"""
-        self._action_handlers = {
-            "volume_up": self._action_volume_up,
-            "volume_down": self._action_volume_down,
-            "volume_set": self._action_volume_set,
-            "stop_playback": self._action_stop_playback,
-            "current_time": self._action_current_time,
-            "new_conversation": self._action_new_conversation,
-            "query_today_events": self._action_query_today_events,
-            "query_tomorrow_events": self._action_query_tomorrow_events,
-            "play_music": self._action_play_music,
-            "play_favorite_music": self._action_play_favorite_music,
-            "next_track": self._action_next_track,
-            "prev_track": self._action_prev_track,
-        }
 
     # 用于去除标点的正则（中英文标点 + 空白）
     _PUNCTUATION_RE = re.compile(
         r'[。，！？、；：""''（）【】《》\s.!?,;:\'"()\[\]{}\-~…]+'
     )
 
+    def __init__(
+        self,
+        skills_config: dict = None,
+        enabled: bool = True,
+        database=None,
+        music_player=None,
+    ):
+        self.enabled = enabled
+        self.db = database
+        self.music_player = music_player
+        self.skills: dict[str, Skill] = {}
+        self._action_handlers: dict[str, Callable] = {}
+
+        # 注册内置动作处理器
+        self._register_builtin_actions()
+
+        # 解析分组配置
+        if skills_config:
+            for skill_name, skill_cfg in skills_config.items():
+                if not isinstance(skill_cfg, dict):
+                    continue
+                skill = Skill(
+                    name=skill_name,
+                    enabled=skill_cfg.get("enabled", True),
+                    options=skill_cfg.get("options", {}),
+                )
+                actions_cfg = skill_cfg.get("actions", {})
+                if isinstance(actions_cfg, dict):
+                    for action_name, action_cfg in actions_cfg.items():
+                        if not isinstance(action_cfg, dict):
+                            continue
+                        skill.actions.append(SkillAction(
+                            name=action_name,
+                            keywords=action_cfg.get("keywords", []),
+                            reply=action_cfg.get("reply", ""),
+                        ))
+                self.skills[skill_name] = skill
+
+        if self.enabled:
+            total_actions = sum(len(s.actions) for s in self.skills.values())
+            active_skills = sum(1 for s in self.skills.values() if s.enabled)
+            logger.info(
+                "技能路由已启用: %d 个技能 (%d 启用), %d 个操作",
+                len(self.skills), active_skills, total_actions,
+            )
+
+    def _register_builtin_actions(self) -> None:
+        """注册内置动作处理器。按 action name 注册。"""
+        self._action_handlers = {
+            # music
+            "play": self._action_play_music,
+            "play_favorite": self._action_play_favorite_music,
+            "next_track": self._action_next_track,
+            "prev_track": self._action_prev_track,
+            "stop": self._action_stop_playback,
+            "volume_up": self._action_volume_up,
+            "volume_down": self._action_volume_down,
+            # calendar
+            "query_today": self._action_query_today_events,
+            "query_tomorrow": self._action_query_tomorrow_events,
+            # conversation
+            "new_conversation": self._action_new_conversation,
+            # utility
+            "current_time": self._action_current_time,
+        }
+
     async def match(self, text: str) -> Optional[SkillResult]:
         """
         匹配用户输入，返回执行结果或 None（交给 AI）。
 
-        对用户输入去除标点后再匹配关键词，避免 FunASR 识别结果中的
-        标点符号（如"播放本地歌曲。"中的"。"）干扰匹配。
+        遍历所有启用的技能及其操作，去除标点后匹配关键词。
 
         Parameters
         ----------
@@ -121,46 +164,50 @@ class SkillRouter:
         Returns
         -------
         SkillResult | None
-            匹配到则返回执行结果，否则 None
         """
         if not self.enabled or not text:
             return None
 
-        # 去除标点后用于匹配
         text_clean = self._PUNCTUATION_RE.sub("", text.strip().lower())
 
-        for cmd in self.commands:
-            if not cmd.enabled:
+        for skill in self.skills.values():
+            if not skill.enabled:
                 continue
-            for keyword in cmd.keywords:
-                if keyword.lower() in text_clean:
-                    logger.info(
-                        "技能匹配: '%s' -> action=%s (keyword='%s')",
-                        text, cmd.action, keyword,
-                    )
-                    return await self._execute(cmd, text)  # 传原始文本
+            for action in skill.actions:
+                for keyword in action.keywords:
+                    if keyword.lower() in text_clean:
+                        logger.info(
+                            "技能匹配: '%s' -> skill=%s, action=%s (keyword='%s')",
+                            text, skill.name, action.name, keyword,
+                        )
+                        return await self._execute(skill, action, text)
 
         return None
 
-    async def _execute(self, cmd: SkillCommand, user_text: str = "") -> SkillResult:
-        """执行匹配到的技能。"""
-        handler = self._action_handlers.get(cmd.action)
+    async def _execute(
+        self, skill: Skill, action: SkillAction, user_text: str = ""
+    ) -> SkillResult:
+        """执行匹配到的操作。"""
+        handler = self._action_handlers.get(action.name)
         if handler:
-            return await handler(cmd, user_text)
+            return await handler(skill, action, user_text)
 
-        # 没有 handler，只返回配置的回复文本
-        if cmd.reply:
-            return SkillResult(text=cmd.reply, action=cmd.action)
-
-        return SkillResult(text="好的", action=cmd.action)
+        # 没有 handler，返回配置的回复文本
+        return SkillResult(
+            text=action.reply or "好的",
+            action=action.name,
+            skill=skill.name,
+        )
 
     # ------------------------------------------------------------------
-    # 内置动作处理器
+    # music 技能动作
     # ------------------------------------------------------------------
 
-    async def _action_volume_up(self, cmd: SkillCommand, user_text: str = "") -> SkillResult:
+    async def _action_volume_up(
+        self, skill: Skill, action: SkillAction, user_text: str = ""
+    ) -> SkillResult:
         """调大音量。"""
-        step = cmd.options.get("step", "10%")
+        step = skill.options.get("volume_step", "10%")
         try:
             proc = await asyncio.create_subprocess_exec(
                 "amixer", "set", "Master", f"{step}+",
@@ -168,14 +215,19 @@ class SkillRouter:
                 stderr=asyncio.subprocess.PIPE,
             )
             await proc.communicate()
-            logger.info("音量已调大")
+            logger.info("音量已调大 (%s)", step)
         except Exception as e:
             logger.warning("调大音量失败: %s", e)
-        return SkillResult(text=cmd.reply or "好的，已调大音量", action="volume_up")
+        return SkillResult(
+            text=action.reply or "好的，已调大音量",
+            action="volume_up", skill="music",
+        )
 
-    async def _action_volume_down(self, cmd: SkillCommand, user_text: str = "") -> SkillResult:
+    async def _action_volume_down(
+        self, skill: Skill, action: SkillAction, user_text: str = ""
+    ) -> SkillResult:
         """调小音量。"""
-        step = cmd.options.get("step", "10%")
+        step = skill.options.get("volume_step", "10%")
         try:
             proc = await asyncio.create_subprocess_exec(
                 "amixer", "set", "Master", f"{step}-",
@@ -183,22 +235,24 @@ class SkillRouter:
                 stderr=asyncio.subprocess.PIPE,
             )
             await proc.communicate()
-            logger.info("音量已调小")
+            logger.info("音量已调小 (%s)", step)
         except Exception as e:
             logger.warning("调小音量失败: %s", e)
-        return SkillResult(text=cmd.reply or "好的，已调小音量", action="volume_down")
+        return SkillResult(
+            text=action.reply or "好的，已调小音量",
+            action="volume_down", skill="music",
+        )
 
-    async def _action_volume_set(self, cmd: SkillCommand, user_text: str = "") -> SkillResult:
-        """设置音量到指定百分比（从 reply 中解析）。"""
-        return SkillResult(text=cmd.reply or "好的", action="volume_set")
-
-    async def _action_stop_playback(self, cmd: SkillCommand, user_text: str = "") -> SkillResult:
-        """停止所有 mpv 播放。"""
-        # 如果有音乐播放器在播放，用它来停止（会清空播放列表）
+    async def _action_stop_playback(
+        self, skill: Skill, action: SkillAction, user_text: str = ""
+    ) -> SkillResult:
+        """停止播放。"""
         if self.music_player and self.music_player.is_playing:
             await self.music_player.stop()
-            return SkillResult(text=cmd.reply or "好的，已停止播放", action="stop_playback")
-        # 否则直接 kill mpv
+            return SkillResult(
+                text=action.reply or "好的，已停止播放",
+                action="stop", skill="music",
+            )
         try:
             proc = await asyncio.create_subprocess_exec(
                 "pkill", "-f", "mpv",
@@ -206,36 +260,107 @@ class SkillRouter:
                 stderr=asyncio.subprocess.PIPE,
             )
             await proc.communicate()
-            logger.info("已停止播放")
-        except Exception as e:
-            logger.debug("停止播放失败: %s", e)
-        return SkillResult(text=cmd.reply or "好的，已停止播放", action="stop_playback")
-
-    async def _action_current_time(self, cmd: SkillCommand, user_text: str = "") -> SkillResult:
-        """报时。"""
-        now = datetime.datetime.now()
-        time_str = now.strftime("现在是%H点%M分")
-        return SkillResult(text=time_str, action="current_time")
-
-    async def _action_new_conversation(self, cmd: SkillCommand, user_text: str = "") -> SkillResult:
-        """
-        新建对话。
-
-        注意：实际的新建操作由 main.py 的 _conversation_loop 根据
-        action="new_conversation" 来执行。
-        """
+        except Exception:
+            pass
         return SkillResult(
-            text=cmd.reply or "好的，已开启新对话",
-            action="new_conversation",
+            text=action.reply or "好的，已停止播放",
+            action="stop", skill="music",
         )
 
-    async def _action_query_today_events(self, cmd: SkillCommand, user_text: str = "") -> SkillResult:
+    def _extract_music_query(self, user_text: str, keywords: list[str]) -> str:
+        """从用户输入中提取音乐搜索关键词。"""
+        text = user_text.strip()
+        for kw in sorted(keywords, key=len, reverse=True):
+            idx = text.lower().find(kw.lower())
+            if idx != -1:
+                remainder = text[idx + len(kw):].strip()
+                for prefix in ("歌曲", "歌", "音乐", "本地", "一首", "首"):
+                    if remainder.startswith(prefix):
+                        remainder = remainder[len(prefix):].strip()
+                remainder = self._PUNCTUATION_RE.sub("", remainder)
+                return remainder
+        return ""
+
+    async def _action_play_music(
+        self, skill: Skill, action: SkillAction, user_text: str = ""
+    ) -> SkillResult:
+        """播放音乐：有搜索词则单曲，无则列表播放。"""
+        if not self.music_player:
+            return SkillResult(text="音乐播放功能不可用", action="play", skill="music")
+
+        search_term = self._extract_music_query(user_text, action.keywords)
+
+        if search_term:
+            track = await self.music_player.play_single(search_term)
+            if not track:
+                return SkillResult(
+                    text=f"没有找到「{search_term}」相关的歌曲",
+                    action="play", skill="music",
+                )
+            singer = track.get("singer", "")
+            name = track.get("name", "")
+            text = f"正在播放{singer}的{name}" if singer else f"正在播放{name}"
+            return SkillResult(text=text, action="play", skill="music")
+        else:
+            track = await self.music_player.play_all()
+            if not track:
+                return SkillResult(text="本地没有可播放的歌曲", action="play", skill="music")
+            total = len(self.music_player._playlist)
+            return SkillResult(text=f"开始播放，共{total}首歌曲", action="play", skill="music")
+
+    async def _action_play_favorite_music(
+        self, skill: Skill, action: SkillAction, user_text: str = ""
+    ) -> SkillResult:
+        """播放收藏歌曲。"""
+        if not self.music_player:
+            return SkillResult(text="音乐播放功能不可用", action="play_favorite", skill="music")
+        track = await self.music_player.play_all(favorite_only=True)
+        if not track:
+            return SkillResult(text="没有收藏的歌曲", action="play_favorite", skill="music")
+        total = len(self.music_player._playlist)
+        return SkillResult(text=f"开始播放收藏歌曲，共{total}首", action="play_favorite", skill="music")
+
+    async def _action_next_track(
+        self, skill: Skill, action: SkillAction, user_text: str = ""
+    ) -> SkillResult:
+        """下一首。"""
+        if not self.music_player or not self.music_player.is_playing:
+            return SkillResult(text="当前没有在播放歌曲", action="next_track", skill="music")
+        track = await self.music_player.next_track()
+        if not track:
+            return SkillResult(text="已经是最后一首了", action="next_track", skill="music")
+        singer = track.get("singer", "")
+        name = track.get("name", "")
+        text = f"正在播放{singer}的{name}" if singer else f"正在播放{name}"
+        return SkillResult(text=text, action="next_track", skill="music")
+
+    async def _action_prev_track(
+        self, skill: Skill, action: SkillAction, user_text: str = ""
+    ) -> SkillResult:
+        """上一首。"""
+        if not self.music_player or not self.music_player.is_playing:
+            return SkillResult(text="当前没有在播放歌曲", action="prev_track", skill="music")
+        track = await self.music_player.prev_track()
+        if not track:
+            return SkillResult(text="已经是第一首了", action="prev_track", skill="music")
+        singer = track.get("singer", "")
+        name = track.get("name", "")
+        text = f"正在播放{singer}的{name}" if singer else f"正在播放{name}"
+        return SkillResult(text=text, action="prev_track", skill="music")
+
+    # ------------------------------------------------------------------
+    # calendar 技能动作
+    # ------------------------------------------------------------------
+
+    async def _action_query_today_events(
+        self, skill: Skill, action: SkillAction, user_text: str = ""
+    ) -> SkillResult:
         """查询今天的日程。"""
-        return await self._query_events_for_date(
-            datetime.date.today(), "今天"
-        )
+        return await self._query_events_for_date(datetime.date.today(), "今天")
 
-    async def _action_query_tomorrow_events(self, cmd: SkillCommand, user_text: str = "") -> SkillResult:
+    async def _action_query_tomorrow_events(
+        self, skill: Skill, action: SkillAction, user_text: str = ""
+    ) -> SkillResult:
         """查询明天的日程。"""
         return await self._query_events_for_date(
             datetime.date.today() + datetime.timedelta(days=1), "明天"
@@ -244,135 +369,51 @@ class SkillRouter:
     async def _query_events_for_date(
         self, date: datetime.date, label: str
     ) -> SkillResult:
-        """查询指定日期的日程并生成语音回复。"""
+        """查询指定日期的日程。"""
         if not self.db:
-            return SkillResult(text="日程功能暂不可用", action="query_events")
-
+            return SkillResult(text="日程功能暂不可用", action="query_events", skill="calendar")
         try:
             events = await self.db.get_events_by_date(date.strftime("%Y-%m-%d"))
         except Exception as e:
             logger.warning("查询日程失败: %s", e)
-            return SkillResult(text="查询日程时出错了", action="query_events")
-
+            return SkillResult(text="查询日程时出错了", action="query_events", skill="calendar")
         if not events:
-            return SkillResult(
-                text=f"{label}没有日程安排",
-                action="query_events",
-            )
+            return SkillResult(text=f"{label}没有日程安排", action="query_events", skill="calendar")
 
         parts = []
         for ev in events:
             if ev.get("all_day"):
                 parts.append(f"全天，{ev['title']}")
             elif ev.get("start_time"):
-                t = ev["start_time"]
-                parts.append(f"{t}，{ev['title']}")
+                parts.append(f"{ev['start_time']}，{ev['title']}")
             else:
                 parts.append(ev["title"])
-
         reply = f"{label}有{len(events)}个日程：" + "；".join(parts)
-        return SkillResult(text=reply, action="query_events")
+        return SkillResult(text=reply, action="query_events", skill="calendar")
 
     # ------------------------------------------------------------------
-    # 音乐播放动作
+    # conversation 技能动作
     # ------------------------------------------------------------------
 
-    def _extract_music_query(self, user_text: str, keywords: list[str]) -> str:
-        """
-        从用户输入中提取音乐搜索关键词。
-
-        例如: "播放歌曲雨爱" + keywords=["播放歌曲"] → "雨爱"
-              "播放杨丞琳的歌" + keywords=["播放"] → "杨丞琳的歌"
-        """
-        text = user_text.strip()
-        for kw in sorted(keywords, key=len, reverse=True):
-            # 按关键词长度降序匹配，优先去掉最长的前缀
-            idx = text.lower().find(kw.lower())
-            if idx != -1:
-                remainder = text[idx + len(kw):].strip()
-                # 去掉常见连接词
-                for prefix in ("歌曲", "歌", "音乐", "本地", "一首", "首"):
-                    if remainder.startswith(prefix):
-                        remainder = remainder[len(prefix):].strip()
-                # 去除 FunASR 识别结果中的标点符号
-                remainder = re.sub(
-                    r'[。，！？、；：""''（）【】《》\s.!?,;:\'"()\[\]{}\-~…]+',
-                    '', remainder,
-                )
-                return remainder
-        return ""
-
-    async def _action_play_music(self, cmd: SkillCommand, user_text: str = "") -> SkillResult:
-        """
-        播放音乐（统一入口）。
-
-        有搜索关键词 → 单曲搜索播放
-        无搜索关键词 → 列表顺序播放
-        """
-        if not self.music_player:
-            return SkillResult(text="音乐播放功能不可用", action="play_music")
-
-        search_term = self._extract_music_query(user_text, cmd.keywords)
-
-        if search_term:
-            # 单曲搜索播放
-            track = await self.music_player.play_single(search_term)
-            if not track:
-                return SkillResult(
-                    text=f"没有找到「{search_term}」相关的歌曲",
-                    action="play_music",
-                )
-            singer = track.get("singer", "")
-            name = track.get("name", "")
-            text = f"正在播放{singer}的{name}" if singer else f"正在播放{name}"
-            return SkillResult(text=text, action="play_music")
-        else:
-            # 列表顺序播放
-            track = await self.music_player.play_all()
-            if not track:
-                return SkillResult(text="本地没有可播放的歌曲", action="play_music")
-            total = len(self.music_player._playlist)
-            return SkillResult(
-                text=f"开始播放，共{total}首歌曲",
-                action="play_music",
-            )
-
-    async def _action_play_favorite_music(self, cmd: SkillCommand, user_text: str = "") -> SkillResult:
-        """播放收藏歌曲。"""
-        if not self.music_player:
-            return SkillResult(text="音乐播放功能不可用", action="play_favorite_music")
-
-        track = await self.music_player.play_all(favorite_only=True)
-        if not track:
-            return SkillResult(text="没有收藏的歌曲", action="play_favorite_music")
-        total = len(self.music_player._playlist)
+    async def _action_new_conversation(
+        self, skill: Skill, action: SkillAction, user_text: str = ""
+    ) -> SkillResult:
+        """新建对话（实际操作由 main.py 根据 action 名执行）。"""
         return SkillResult(
-            text=f"开始播放收藏歌曲，共{total}首",
-            action="play_favorite_music",
+            text=action.reply or "好的，已开启新对话",
+            action="new_conversation", skill="conversation",
         )
 
-    async def _action_next_track(self, cmd: SkillCommand, user_text: str = "") -> SkillResult:
-        """下一首。"""
-        if not self.music_player or not self.music_player.is_playing:
-            return SkillResult(text="当前没有在播放歌曲", action="next_track")
+    # ------------------------------------------------------------------
+    # utility 技能动作
+    # ------------------------------------------------------------------
 
-        track = await self.music_player.next_track()
-        if not track:
-            return SkillResult(text="已经是最后一首了", action="next_track")
-        singer = track.get("singer", "")
-        name = track.get("name", "")
-        text = f"正在播放{singer}的{name}" if singer else f"正在播放{name}"
-        return SkillResult(text=text, action="next_track")
-
-    async def _action_prev_track(self, cmd: SkillCommand, user_text: str = "") -> SkillResult:
-        """上一首。"""
-        if not self.music_player or not self.music_player.is_playing:
-            return SkillResult(text="当前没有在播放歌曲", action="prev_track")
-
-        track = await self.music_player.prev_track()
-        if not track:
-            return SkillResult(text="已经是第一首了", action="prev_track")
-        singer = track.get("singer", "")
-        name = track.get("name", "")
-        text = f"正在播放{singer}的{name}" if singer else f"正在播放{name}"
-        return SkillResult(text=text, action="prev_track")
+    async def _action_current_time(
+        self, skill: Skill, action: SkillAction, user_text: str = ""
+    ) -> SkillResult:
+        """报时。"""
+        now = datetime.datetime.now()
+        return SkillResult(
+            text=now.strftime("现在是%H点%M分"),
+            action="current_time", skill="utility",
+        )

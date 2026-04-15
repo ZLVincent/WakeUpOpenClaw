@@ -269,31 +269,40 @@ tts:
 
 ### 本地技能
 
-在 AI 之前匹配关键词，命中则本地执行：
+在 AI 之前匹配关键词，命中则本地执行。技能按业务分组，每个可独立开关：
 
 ```yaml
 skills:
   enabled: true
-  commands:
-    - action: "volume_up"
-      enabled: true                            # 每个技能可独立开关
-      keywords: ["大声一点", "音量调大"]
-      reply: "好的，已调大音量"
-      options:
-        step: "10%"                            # 自定义参数
-    - action: "stop_playback"
-      enabled: true
-      keywords: ["停止播放", "安静"]
-    - action: "current_time"
-      enabled: true
-      keywords: ["现在几点", "报时"]
-    - action: "play_music"
-      enabled: true
-      keywords: ["播放歌曲", "播放本地歌曲", "播放"]
-    - action: "next_track"
-      enabled: true
-      keywords: ["下一首", "切歌"]
-      action: "prev_track"
+  music:                                       # 本地音乐播放技能
+    enabled: true
+    options:
+      volume_step: "10%"
+    actions:
+      play:
+        keywords: ["播放歌曲", "播放本地歌曲", "播放"]
+      volume_up:
+        keywords: ["大声一点", "音量调大"]
+        reply: "好的，已调大音量"
+      next_track:
+        keywords: ["下一首", "切歌"]
+      stop:
+        keywords: ["停止播放", "安静"]
+  calendar:                                    # 日程管理技能
+    enabled: true
+    actions:
+      query_today:
+        keywords: ["今天有什么安排", "今天日程"]
+  conversation:                                # 对话管理技能
+    enabled: true
+    actions:
+      new_conversation:
+        keywords: ["新对话", "重新开始"]
+  utility:                                     # 通用工具技能
+    enabled: true
+    actions:
+      current_time:
+        keywords: ["现在几点", "报时"]
 ```
 
 ### 本地音乐播放

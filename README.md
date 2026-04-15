@@ -275,20 +275,24 @@ tts:
 skills:
   enabled: true
   commands:
-    - keywords: ["大声一点", "音量调大"]
-      action: "volume_up"
+    - action: "volume_up"
+      enabled: true                            # 每个技能可独立开关
+      keywords: ["大声一点", "音量调大"]
       reply: "好的，已调大音量"
-    - keywords: ["停止播放", "安静"]
-      action: "stop_playback"
-    - keywords: ["现在几点", "报时"]
-      action: "current_time"
-    - keywords: ["新对话", "重新开始"]
-      action: "new_conversation"
-    - keywords: ["播放歌曲", "播放本地歌曲", "播放音乐", "播放"]
-      action: "play_music"
-    - keywords: ["下一首", "切歌"]
-      action: "next_track"
-    - keywords: ["上一首"]
+      options:
+        step: "10%"                            # 自定义参数
+    - action: "stop_playback"
+      enabled: true
+      keywords: ["停止播放", "安静"]
+    - action: "current_time"
+      enabled: true
+      keywords: ["现在几点", "报时"]
+    - action: "play_music"
+      enabled: true
+      keywords: ["播放歌曲", "播放本地歌曲", "播放"]
+    - action: "next_track"
+      enabled: true
+      keywords: ["下一首", "切歌"]
       action: "prev_track"
 ```
 

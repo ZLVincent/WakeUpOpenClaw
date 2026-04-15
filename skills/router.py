@@ -32,9 +32,11 @@ class SkillResult:
 @dataclass
 class SkillCommand:
     """一条技能指令定义。"""
-    keywords: list[str] = field(default_factory=list)
     action: str = ""
+    enabled: bool = True
+    keywords: list[str] = field(default_factory=list)
     reply: str = ""
+    options: dict = field(default_factory=dict)
 
 
 class SkillRouter:
@@ -71,13 +73,16 @@ class SkillRouter:
         if commands:
             for cmd in commands:
                 self.commands.append(SkillCommand(
-                    keywords=cmd.get("keywords", []),
                     action=cmd.get("action", ""),
+                    enabled=cmd.get("enabled", True),
+                    keywords=cmd.get("keywords", []),
                     reply=cmd.get("reply", ""),
+                    options=cmd.get("options", {}),
                 ))
 
         if self.enabled:
-            logger.info("技能路由已启用，共 %d 条指令", len(self.commands))
+            active = sum(1 for c in self.commands if c.enabled)
+            logger.info("技能路由已启用，共 %d 条指令（%d 条启用）", len(self.commands), active)
 
     def _register_builtin_actions(self) -> None:
         """注册内置动作处理器。"""
@@ -125,6 +130,8 @@ class SkillRouter:
         text_clean = self._PUNCTUATION_RE.sub("", text.strip().lower())
 
         for cmd in self.commands:
+            if not cmd.enabled:
+                continue
             for keyword in cmd.keywords:
                 if keyword.lower() in text_clean:
                     logger.info(
@@ -153,9 +160,10 @@ class SkillRouter:
 
     async def _action_volume_up(self, cmd: SkillCommand, user_text: str = "") -> SkillResult:
         """调大音量。"""
+        step = cmd.options.get("step", "10%")
         try:
             proc = await asyncio.create_subprocess_exec(
-                "amixer", "set", "Master", "10%+",
+                "amixer", "set", "Master", f"{step}+",
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
             )
@@ -167,9 +175,10 @@ class SkillRouter:
 
     async def _action_volume_down(self, cmd: SkillCommand, user_text: str = "") -> SkillResult:
         """调小音量。"""
+        step = cmd.options.get("step", "10%")
         try:
             proc = await asyncio.create_subprocess_exec(
-                "amixer", "set", "Master", "10%-",
+                "amixer", "set", "Master", f"{step}-",
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
             )

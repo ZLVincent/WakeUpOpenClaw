@@ -49,6 +49,7 @@
 | 对话自动归档 | done | 超过 max_history_rounds 轮自动归档旧对话，新建新会话 |
 | 手动新建对话 | done | Web 按钮 / 语音指令"新对话" |
 | 本地技能路由 | done | 关键词匹配→本地执行，不经过 AI，毫秒级响应 |
+| 技能独立配置 | done | 每个 skill 有 enabled 开关 + options 自定义参数，Web 卡片式 toggle |
 | 音量控制 | done | amixer set Master 10%+/- |
 | 停止播放 | done | pkill mpv |
 | 报时 | done | 本地 datetime 格式化 |

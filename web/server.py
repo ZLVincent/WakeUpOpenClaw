@@ -321,12 +321,22 @@ class WebServer:
         if not new_config or not isinstance(new_config, dict):
             return web.json_response({"error": "配置内容无效"}, status=400)
 
+        # 对比变更的段名
+        old_config = self._read_config() or {}
         success = self._write_config(new_config)
         if not success:
             return web.json_response({"error": "写入配置文件失败"}, status=500)
 
+        changed = self._diff_config_sections(old_config, new_config)
         logger.info("配置已通过 Web 更新 (完整)")
-        return web.json_response({"status": "ok", "message": "配置已保存，部分配置需要重启生效"})
+
+        # 自动推送到远程
+        pushed = await self._git_commit_and_push(
+            "config.yaml",
+            f"chore: update config via web ({', '.join(changed) if changed else 'all'})",
+        )
+        msg = "配置已保存并推送到远程" if pushed else "配置已保存，但推送到远程失败"
+        return web.json_response({"status": "ok", "message": msg, "pushed": pushed})
 
     async def _handle_config_section_update(self, request: web.Request) -> web.Response:
         """更新某个配置段。"""
@@ -350,7 +360,13 @@ class WebServer:
             return web.json_response({"error": "写入配置文件失败"}, status=500)
 
         logger.info("配置已通过 Web 更新 (段: %s)", section)
-        return web.json_response({"status": "ok", "message": f"配置段 '{section}' 已保存，部分配置需要重启生效"})
+
+        pushed = await self._git_commit_and_push(
+            "config.yaml",
+            f"chore: update config via web ({section})",
+        )
+        msg = f"配置段 '{section}' 已保存并推送到远程" if pushed else f"配置段 '{section}' 已保存，但推送到远程失败"
+        return web.json_response({"status": "ok", "message": msg, "pushed": pushed})
 
     # ------------------------------------------------------------------
     # 辅助方法
@@ -388,6 +404,34 @@ class WebServer:
         except Exception as e:
             logger.error("写入配置文件失败: %s", e)
             return False
+
+    async def _git_commit_and_push(self, filepath: str, message: str) -> bool:
+        """git add + commit + push，成功返回 True。"""
+        try:
+            await self._run_cmd("git", "add", filepath)
+            commit_result = await self._run_cmd("git", "commit", "-m", message)
+            if commit_result is None:
+                logger.debug("git commit 无变更或失败")
+                return False
+            push_result = await self._run_cmd("git", "push", "origin")
+            if push_result is None:
+                logger.warning("git push 失败，配置已保存到本地但未推送到远程")
+                return False
+            logger.info("配置已推送到远程: %s", message)
+            return True
+        except Exception as e:
+            logger.warning("git commit/push 失败: %s", e)
+            return False
+
+    @staticmethod
+    def _diff_config_sections(old: dict, new: dict) -> list[str]:
+        """对比两份配置，返回有变更的段名列表。"""
+        changed = []
+        all_keys = set(list(old.keys()) + list(new.keys()))
+        for key in all_keys:
+            if old.get(key) != new.get(key):
+                changed.append(key)
+        return changed
 
     # ------------------------------------------------------------------
     # 系统管理路由

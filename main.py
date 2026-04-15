@@ -479,6 +479,11 @@ class VoiceAssistant:
         )
 
         if detected and self._running:
+            # 唤醒后检查免打扰：时段内忽略唤醒，直接回到监听
+            if self._is_dnd_active():
+                logger.info("检测到唤醒词，但当前处于免打扰时段，忽略")
+                return
+
             # 播放唤醒提示音
             if self.prompt_sound:
                 if self.sound_wake and os.path.exists(self.sound_wake):

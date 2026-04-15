@@ -502,22 +502,22 @@ class WebServer:
     @staticmethod
     def _spawn_restart():
         """
-        在独立进程中执行 supervisorctl restart。
+        触发服务重启。
 
-        使用 subprocess.Popen + start_new_session=True，确保重启进程
-        脱离当前进程组，不会因为当前 Python 进程被杀而一起终止。
+        通过向自身发送 SIGTERM 信号让进程退出，
+        supervisor 的 autorestart 配置会自动重启服务。
+        如果 SIGTERM 不够，再发 SIGKILL。
         """
-        import subprocess
+        import signal
+        logger.info("发送 SIGTERM 给自身进程以触发 supervisor 自动重启")
         try:
-            subprocess.Popen(
-                ["supervisorctl", "restart", "WakeUpOpenClaw"],
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-                start_new_session=True,  # 脱离当前进程组
-            )
-            logger.info("重启进程已启动（独立会话）")
+            os.kill(os.getpid(), signal.SIGTERM)
         except Exception as e:
-            logger.error("启动重启进程失败: %s", e)
+            logger.error("发送 SIGTERM 失败: %s, 尝试 SIGKILL", e)
+            try:
+                os.kill(os.getpid(), signal.SIGKILL)
+            except Exception as e2:
+                logger.error("发送 SIGKILL 也失败: %s", e2)
 
     # ------------------------------------------------------------------
     # 音量控制路由

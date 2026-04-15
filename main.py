@@ -549,6 +549,10 @@ class VoiceAssistant:
                 if skill_result.text:
                     self._set_state(State.SPEAKING)
                     await self.tts_engine.speak(skill_result.text)
+
+                # 单轮模式：技能执行完直接退出对话回到唤醒词监听
+                if self.conversation_mode == "single":
+                    break
                 continue
 
             # 保存用户消息到数据库

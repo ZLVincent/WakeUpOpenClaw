@@ -275,6 +275,12 @@ class SkillRouter:
                 for prefix in ("歌曲", "歌", "音乐", "本地", "一首", "首"):
                     if remainder.startswith(prefix):
                         remainder = remainder[len(prefix):].strip()
+                # 去除 FunASR 识别结果中的标点符号
+                import re as _re
+                remainder = _re.sub(
+                    r'[。，！？、；：""''（）【】《》\s.!?,;:\'"()\[\]{}\-~…]+',
+                    '', remainder,
+                )
                 return remainder
         return ""
 

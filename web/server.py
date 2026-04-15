@@ -483,7 +483,7 @@ class WebServer:
         asyncio.get_running_loop().call_later(
             1.0,
             lambda: asyncio.ensure_future(
-                self._run_cmd("supervisorctl", "restart", "WakeUpOpenClaw")
+                self._run_cmd("sudo", "supervisorctl", "restart", "WakeUpOpenClaw")
             ),
         )
         logger.info("OTA 更新: 重启命令将在 1 秒后执行")
@@ -499,7 +499,7 @@ class WebServer:
         asyncio.get_running_loop().call_later(
             1.0,
             lambda: asyncio.ensure_future(
-                self._run_cmd("supervisorctl", "restart", "WakeUpOpenClaw")
+                self._run_cmd("sudo", "supervisorctl", "restart", "WakeUpOpenClaw")
             ),
         )
         logger.info("手动重启命令将在 1 秒后执行")

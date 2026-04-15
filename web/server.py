@@ -479,9 +479,13 @@ class WebServer:
 
         logger.info("OTA 更新: git pull 完成: %s", pull_output.strip()[:200])
 
-        # 延迟 1 秒后在独立进程中执行重启
-        # 使用 start_new_session=True 确保重启进程不会随当前进程一起被杀
-        asyncio.get_running_loop().call_later(1.0, self._spawn_restart)
+        # 延迟 1 秒后执行重启（确保 HTTP 响应先返回）
+        asyncio.get_running_loop().call_later(
+            1.0,
+            lambda: asyncio.ensure_future(
+                self._run_cmd("supervisorctl", "restart", "WakeUpOpenClaw")
+            ),
+        )
         logger.info("OTA 更新: 重启命令将在 1 秒后执行")
 
         return web.json_response({
@@ -492,32 +496,17 @@ class WebServer:
 
     async def _handle_restart(self, request: web.Request) -> web.Response:
         """仅重启服务（不拉取更新）。"""
-        asyncio.get_running_loop().call_later(1.0, self._spawn_restart)
+        asyncio.get_running_loop().call_later(
+            1.0,
+            lambda: asyncio.ensure_future(
+                self._run_cmd("supervisorctl", "restart", "WakeUpOpenClaw")
+            ),
+        )
         logger.info("手动重启命令将在 1 秒后执行")
         return web.json_response({
             "status": "ok",
             "message": "重启命令已调度，服务即将重启",
         })
-
-    @staticmethod
-    def _spawn_restart():
-        """
-        触发服务重启。
-
-        通过向自身发送 SIGTERM 信号让进程退出，
-        supervisor 的 autorestart 配置会自动重启服务。
-        如果 SIGTERM 不够，再发 SIGKILL。
-        """
-        import signal
-        logger.info("发送 SIGTERM 给自身进程以触发 supervisor 自动重启")
-        try:
-            os.kill(os.getpid(), signal.SIGTERM)
-        except Exception as e:
-            logger.error("发送 SIGTERM 失败: %s, 尝试 SIGKILL", e)
-            try:
-                os.kill(os.getpid(), signal.SIGKILL)
-            except Exception as e2:
-                logger.error("发送 SIGKILL 也失败: %s", e2)
 
     # ------------------------------------------------------------------
     # 音量控制路由

@@ -116,6 +116,7 @@ skills:
         - 几点了
         - 报时
         - 今天几号
+        - 现在几点了
 audio:
   sample_rate: 16000
   channels: 1

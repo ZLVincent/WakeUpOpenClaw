@@ -407,21 +407,29 @@ class WebServer:
 
     async def _git_commit_and_push(self, filepath: str, message: str) -> bool:
         """git add + commit + push，成功返回 True。"""
-        try:
-            await self._run_cmd("git", "add", filepath)
-            commit_result = await self._run_cmd("git", "commit", "-m", message)
-            if commit_result is None:
-                logger.debug("git commit 无变更或失败")
-                return False
-            push_result = await self._run_cmd("git", "push", "origin")
-            if push_result is None:
-                logger.warning("git push 失败，配置已保存到本地但未推送到远程")
-                return False
-            logger.info("配置已推送到远程: %s", message)
-            return True
-        except Exception as e:
-            logger.warning("git commit/push 失败: %s", e)
+        cwd = os.path.dirname(os.path.abspath(self.config_path)) or "."
+        logger.info("开始推送配置变更: %s (cwd=%s)", message, cwd)
+
+        # git add
+        ok, _ = await self._run_cmd_checked("git", "add", filepath, cwd=cwd)
+        if not ok:
+            logger.warning("git add %s 失败", filepath)
             return False
+
+        # git commit
+        ok, out = await self._run_cmd_checked("git", "commit", "-m", message, cwd=cwd)
+        if not ok:
+            logger.warning("git commit 失败: %s", out[:200])
+            return False
+
+        # git push
+        ok, out = await self._run_cmd_checked("git", "push", "origin", cwd=cwd)
+        if not ok:
+            logger.warning("git push 失败: %s", out[:200])
+            return False
+
+        logger.info("配置已推送到远程: %s", message)
+        return True
 
     @staticmethod
     def _diff_config_sections(old: dict, new: dict) -> list[str]:
@@ -728,6 +736,40 @@ class WebServer:
         except Exception as e:
             logger.error("执行命令 %s 失败: %s", args, e)
             return None
+
+    @staticmethod
+    async def _run_cmd_checked(*args: str, cwd: str = None) -> tuple:
+        """
+        运行命令并检查返回码。
+
+        Returns
+        -------
+        tuple[bool, str]
+            (是否成功, stdout 文本)
+        """
+        try:
+            proc = await asyncio.create_subprocess_exec(
+                *args,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+                cwd=cwd,
+            )
+            stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=60)
+            stdout_text = stdout.decode("utf-8", errors="replace").strip()
+            stderr_text = stderr.decode("utf-8", errors="replace").strip()
+            if proc.returncode != 0:
+                logger.warning(
+                    "命令 %s 失败 (code=%d): %s",
+                    " ".join(args), proc.returncode, stderr_text[:300],
+                )
+                return False, stderr_text
+            return True, stdout_text
+        except asyncio.TimeoutError:
+            logger.error("命令 %s 超时 (60s)", " ".join(args))
+            return False, "timeout"
+        except Exception as e:
+            logger.error("命令 %s 异常: %s", " ".join(args), e)
+            return False, str(e)
 
     # ------------------------------------------------------------------
     # WebSocket 状态面板

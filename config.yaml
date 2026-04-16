@@ -4,7 +4,7 @@ wake_up:
     snowboy_lib_path: ./snowboy
     resource_path: ./snowboy/resources/common.res
     model_path: ./snowboy/resources/models/snowboy.umdl
-    sensitivity: 0.5
+    sensitivity: 0.4
     audio_gain: 1
     apply_frontend: false
   porcupine:

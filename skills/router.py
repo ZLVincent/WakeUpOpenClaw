@@ -159,6 +159,8 @@ class SkillRouter:
             "reboot": self._action_reboot,
             "confirm_reboot": self._action_confirm_reboot,
             "system_status": self._action_system_status,
+            "ip_address": self._action_ip_address,
+            "network_status": self._action_network_status,
             # timer
             "set_timer": self._action_set_timer,
             "query_timer": self._action_query_timer,
@@ -649,6 +651,61 @@ class SkillRouter:
             text="\n".join(lines),
             action="system_status", skill="utility",
         )
+
+    async def _action_ip_address(
+        self, skill: Skill, action: SkillAction, user_text: str = ""
+    ) -> SkillResult:
+        """查询本机 IP 地址。"""
+        import socket
+        lines = ["当前网络地址。"]
+        try:
+            hostname = socket.gethostname()
+            # 获取局域网 IP
+            s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+            try:
+                s.connect(("8.8.8.8", 80))
+                local_ip = s.getsockname()[0]
+            finally:
+                s.close()
+            lines.append(f"局域网IP，{local_ip}。")
+            lines.append(f"主机名，{hostname}。")
+        except Exception as e:
+            lines.append(f"获取IP失败，{e}。")
+        return SkillResult(text="\n".join(lines), action="ip_address", skill="utility")
+
+    async def _action_network_status(
+        self, skill: Skill, action: SkillAction, user_text: str = ""
+    ) -> SkillResult:
+        """检查网络连通性（ping 百度和 Google）。"""
+        lines = ["网络连通性检测。"]
+
+        targets = [
+            ("百度", "baidu.com"),
+            ("谷歌", "google.com"),
+        ]
+        for name, host in targets:
+            try:
+                proc = await asyncio.create_subprocess_exec(
+                    "ping", "-c", "1", "-W", "3", host,
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.PIPE,
+                )
+                stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=5)
+                if proc.returncode == 0:
+                    # 提取延迟
+                    output = stdout.decode("utf-8", errors="replace")
+                    import re as _re
+                    m = _re.search(r"time[=<](\d+\.?\d*)", output)
+                    ms = m.group(1) if m else "?"
+                    lines.append(f"{name}，正常，延迟{ms}毫秒。")
+                else:
+                    lines.append(f"{name}，不通。")
+            except asyncio.TimeoutError:
+                lines.append(f"{name}，超时。")
+            except Exception:
+                lines.append(f"{name}，检测失败。")
+
+        return SkillResult(text="\n".join(lines), action="network_status", skill="utility")
 
     # ------------------------------------------------------------------
     # timer 技能动作

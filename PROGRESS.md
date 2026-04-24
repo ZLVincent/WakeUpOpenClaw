@@ -55,6 +55,8 @@
 | 报时 | done | 本地 datetime 格式化 |
 | 系统重启 | done | 双 action 二次确认：reboot(提示) + confirm_reboot(执行 sudo reboot) |
 | 系统状态查询 | done | psutil 读取 CPU 使用率/温度、内存、磁盘、运行时间，语音口语化播报 |
+| IP 地址查询 | done | 读取局域网 IP 和主机名 |
+| 网络状态检测 | done | ping 百度和谷歌，显示延迟或不通状态 |
 
 ### 第八阶段：定时器（已完成）
 

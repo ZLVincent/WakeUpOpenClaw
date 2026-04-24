@@ -152,6 +152,18 @@ skills:
         - CPU使用率
         - 内存使用
         - 设备状态
+      ip_address:
+        keywords:
+        - IP地址
+        - 我的IP
+        - 网络地址
+        - IP是多少
+      network_status:
+        keywords:
+        - 网络状态
+        - 网络通不通
+        - 网络检测
+        - 网络连通
   timer:
     enabled: true
     actions:

@@ -152,6 +152,29 @@ skills:
         - CPU使用率
         - 内存使用
         - 设备状态
+  timer:
+    enabled: true
+    actions:
+      set_timer:
+        keywords:
+        - 分钟后提醒
+        - 分钟后叫我
+        - 小时后提醒
+        - 小时后叫我
+        - 秒后提醒
+        - 定个闹钟
+        - 定个定时器
+        - 倒计时
+      query_timer:
+        keywords:
+        - 定时器状态
+        - 还剩多少时间
+        - 还有几分钟
+      cancel_timer:
+        keywords:
+        - 取消定时器
+        - 取消闹钟
+        - 取消倒计时
 audio:
   sample_rate: 16000
   channels: 1

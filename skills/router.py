@@ -14,6 +14,7 @@ from typing import Callable, Optional, TYPE_CHECKING
 if TYPE_CHECKING:
     from storage.database import ChatDatabase
     from skills.music_player import MusicPlayer
+    from skills.timer import TimerManager
 
 from utils.logger import get_logger
 
@@ -77,6 +78,8 @@ class SkillRouter:
         数据库实例
     music_player : MusicPlayer | None
         音乐播放器实例
+    timer_manager : TimerManager | None
+        定时器管理器实例
     """
 
     # 用于去除标点的正则（中英文标点 + 空白）
@@ -90,10 +93,12 @@ class SkillRouter:
         enabled: bool = True,
         database=None,
         music_player=None,
+        timer_manager=None,
     ):
         self.enabled = enabled
         self.db = database
         self.music_player = music_player
+        self.timer_manager = timer_manager
         self.skills: dict[str, Skill] = {}
         self._action_handlers: dict[str, Callable] = {}
 
@@ -154,6 +159,10 @@ class SkillRouter:
             "reboot": self._action_reboot,
             "confirm_reboot": self._action_confirm_reboot,
             "system_status": self._action_system_status,
+            # timer
+            "set_timer": self._action_set_timer,
+            "query_timer": self._action_query_timer,
+            "cancel_timer": self._action_cancel_timer,
         }
 
     async def match(self, text: str) -> Optional[SkillResult]:
@@ -640,3 +649,74 @@ class SkillRouter:
             text="\n".join(lines),
             action="system_status", skill="utility",
         )
+
+    # ------------------------------------------------------------------
+    # timer 技能动作
+    # ------------------------------------------------------------------
+
+    async def _action_set_timer(
+        self, skill: Skill, action: SkillAction, user_text: str = ""
+    ) -> SkillResult:
+        """设定定时器。从用户输入中解析时长和标签。"""
+        from skills.timer import parse_duration, format_duration
+
+        if not self.timer_manager:
+            return SkillResult(text="定时器功能不可用", action="set_timer", skill="timer")
+
+        duration, label = parse_duration(user_text)
+        if duration <= 0:
+            return SkillResult(
+                text="没有识别到有效的时间，请说类似5分钟后提醒我",
+                action="set_timer", skill="timer",
+            )
+
+        timer = self.timer_manager.create(duration, label)
+        duration_str = format_duration(duration)
+        text = f"好的，{duration_str}后提醒您"
+        if label:
+            text += f"，{label}"
+        return SkillResult(text=text, action="set_timer", skill="timer")
+
+    async def _action_query_timer(
+        self, skill: Skill, action: SkillAction, user_text: str = ""
+    ) -> SkillResult:
+        """查询定时器状态。"""
+        from skills.timer import format_duration
+
+        if not self.timer_manager:
+            return SkillResult(text="定时器功能不可用", action="query_timer", skill="timer")
+
+        active = self.timer_manager.active_timers
+        if not active:
+            return SkillResult(text="当前没有定时器", action="query_timer", skill="timer")
+
+        lines = [f"当前有{len(active)}个定时器。"]
+        for t in active:
+            remaining = format_duration(t.remaining_seconds)
+            if t.label:
+                lines.append(f"还剩{remaining}，{t.label}。")
+            else:
+                lines.append(f"还剩{remaining}。")
+
+        return SkillResult(text="\n".join(lines), action="query_timer", skill="timer")
+
+    async def _action_cancel_timer(
+        self, skill: Skill, action: SkillAction, user_text: str = ""
+    ) -> SkillResult:
+        """取消定时器。"""
+        if not self.timer_manager:
+            return SkillResult(text="定时器功能不可用", action="cancel_timer", skill="timer")
+
+        if self.timer_manager.count == 0:
+            return SkillResult(text="当前没有定时器", action="cancel_timer", skill="timer")
+
+        # 如果有多个，全部取消
+        if self.timer_manager.count > 1:
+            count = self.timer_manager.cancel_all()
+            return SkillResult(text=f"已取消全部{count}个定时器", action="cancel_timer", skill="timer")
+
+        # 只有一个，取消它
+        timer = self.timer_manager.cancel()
+        if timer:
+            return SkillResult(text="好的，定时器已取消", action="cancel_timer", skill="timer")
+        return SkillResult(text="取消失败", action="cancel_timer", skill="timer")

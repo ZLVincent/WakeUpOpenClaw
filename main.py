@@ -33,6 +33,7 @@ from asr.funasr_client import FunASRClient
 from audio.recorder import AudioRecorder
 from skills.music_player import MusicPlayer
 from skills.router import SkillRouter
+from skills.timer import TimerManager, format_duration
 from storage.database import ChatDatabase
 from tts.edge_tts_engine import EdgeTTSEngine
 from utils.config_resolver import resolve_config
@@ -272,6 +273,11 @@ class VoiceAssistant:
             player_args=tts_cfg.get("player_args", ["--no-terminal", "--really-quiet"]),
         )
 
+        # 定时器管理器
+        self.timer_manager = TimerManager(
+            on_expire=self._on_timer_expire,
+        )
+
         # 技能路由
         skills_cfg = config.get("skills", {})
         # 提取技能分组配置（排除 enabled 全局开关字段）
@@ -281,6 +287,7 @@ class VoiceAssistant:
             enabled=skills_cfg.get("enabled", True),
             database=self.db,
             music_player=self.music_player,
+            timer_manager=self.timer_manager,
         )
 
         # 日程提醒配置
@@ -810,6 +817,32 @@ class VoiceAssistant:
                 logger.info("微信提醒发送成功")
         except Exception as e:
             logger.error("发送微信提醒异常: %s", e)
+
+    async def _on_timer_expire(self, timer) -> None:
+        """
+        定时器到期回调。
+
+        通过 TTS 语音播报提醒（不受免打扰限制，因为用户主动设定）。
+        可选微信推送。
+        """
+        label = timer.label
+        duration_str = format_duration(timer.duration_seconds)
+
+        if label:
+            msg = f"定时器到了，{label}"
+        else:
+            msg = f"{duration_str}定时器到了"
+
+        logger.info("定时器到期: %s", msg)
+
+        # TTS 播报（定时器不受免打扰限制）
+        try:
+            await self.tts_engine.speak(msg)
+        except Exception as e:
+            logger.warning("定时器 TTS 播报失败: %s", e)
+
+        # 可选微信推送
+        await self._send_wechat_remind(msg)
 
     async def _wait_for_speech(self, timeout: float = 5.0) -> bool:
         """

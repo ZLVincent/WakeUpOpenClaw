@@ -55,6 +55,16 @@
 | 报时 | done | 本地 datetime 格式化 |
 | 系统重启 | done | 双 action 二次确认：reboot(提示) + confirm_reboot(执行 sudo reboot) |
 | 系统状态查询 | done | psutil 读取 CPU 使用率/温度、内存、磁盘、运行时间，语音口语化播报 |
+
+### 第八阶段：定时器（已完成）
+
+| 功能 | 状态 | 说明 |
+|------|------|------|
+| 定时器设定 | done | "5分钟后提醒我关火" 解析时长+标签，asyncio 倒计时 |
+| 定时器查询 | done | "还剩多少时间" 查看所有活跃定时器剩余时间 |
+| 定时器取消 | done | "取消定时器" 取消最近的/全部定时器 |
+| 到期提醒 | done | TTS 语音播报（不受免打扰限制）+ 可选微信推送 |
+| 时长解析 | done | 支持 N分钟/N小时/N秒/半小时/N个半小时 等格式 |
 | 语音打断 (Barge-in) | done | TTS 播放期间后台运行唤醒词检测，检测到则 kill 播放进程 |
 | 流式 TTS | done | 按标点分句，asyncio.Queue 生产者-消费者，边合成边播放 |
 
@@ -137,7 +147,8 @@ WakeUpOpenClaw/
 │
 ├── skills/
 │   ├── router.py                # 本地技能路由 (关键词匹配 + 内置动作)
-│   └── music_player.py          # 本地音乐播放器 (播放列表 + mpv 管理)
+│   ├── music_player.py          # 本地音乐播放器 (播放列表 + mpv 管理)
+│   └── timer.py                 # 定时器管理 (asyncio 倒计时 + 到期回调)
 │
 ├── mcp/
 │   └── calendar_server.py       # MCP Server (日程工具，供 OpenClaw Agent 调用)

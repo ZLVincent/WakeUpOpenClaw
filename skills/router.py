@@ -153,6 +153,7 @@ class SkillRouter:
             "current_time": self._action_current_time,
             "reboot": self._action_reboot,
             "confirm_reboot": self._action_confirm_reboot,
+            "system_status": self._action_system_status,
         }
 
     async def match(self, text: str) -> Optional[SkillResult]:
@@ -587,4 +588,55 @@ class SkillRouter:
         return SkillResult(
             text=action.reply or "好的，系统即将重启",
             action="confirm_reboot", skill="utility",
+        )
+
+    async def _action_system_status(
+        self, skill: Skill, action: SkillAction, user_text: str = ""
+    ) -> SkillResult:
+        """查看系统状态（CPU、内存、温度、磁盘、运行时间）。"""
+        import psutil
+
+        lines = ["当前系统状态。"]
+
+        # CPU 使用率
+        cpu_percent = psutil.cpu_percent(interval=1)
+        lines.append(f"CPU使用率{cpu_percent:.0f}%。")
+
+        # CPU 温度（树莓派）
+        try:
+            with open("/sys/class/thermal/thermal_zone0/temp", "r") as f:
+                temp = int(f.read().strip()) / 1000
+            lines.append(f"CPU温度{temp:.0f}度。")
+        except Exception:
+            pass
+
+        # 内存
+        mem = psutil.virtual_memory()
+        mem_used_gb = mem.used / (1024 ** 3)
+        mem_total_gb = mem.total / (1024 ** 3)
+        lines.append(f"内存已使用{mem_used_gb:.1f}G，共{mem_total_gb:.1f}G，使用率{mem.percent:.0f}%。")
+
+        # 磁盘
+        disk = psutil.disk_usage("/")
+        disk_used_gb = disk.used / (1024 ** 3)
+        disk_total_gb = disk.total / (1024 ** 3)
+        lines.append(f"磁盘已使用{disk_used_gb:.0f}G，共{disk_total_gb:.0f}G，使用率{disk.percent:.0f}%。")
+
+        # 系统运行时间
+        try:
+            with open("/proc/uptime", "r") as f:
+                uptime_seconds = float(f.read().split()[0])
+            days = int(uptime_seconds // 86400)
+            hours = int((uptime_seconds % 86400) // 3600)
+            if days > 0:
+                lines.append(f"系统已运行{days}天{hours}小时。")
+            else:
+                minutes = int((uptime_seconds % 3600) // 60)
+                lines.append(f"系统已运行{hours}小时{minutes}分钟。")
+        except Exception:
+            pass
+
+        return SkillResult(
+            text="\n".join(lines),
+            action="system_status", skill="utility",
         )

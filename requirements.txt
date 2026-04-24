@@ -4,6 +4,7 @@ websockets>=12.0        # WebSocket（FunASR 客户端）
 edge-tts>=6.1.0         # 微软 Edge TTS
 pyyaml>=6.0             # 配置文件解析
 aiomysql>=0.2.0         # 异步 MySQL 客户端（对话历史持久化）
+psutil>=5.9.0           # 系统状态监控（CPU/内存/磁盘）
 
 # MCP Server 依赖（OpenClaw 日程工具）
 mcp>=1.0.0              # MCP Python SDK

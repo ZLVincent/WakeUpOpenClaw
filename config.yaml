@@ -145,6 +145,13 @@ skills:
         keywords:
         - 确认重启
         reply: 好的，系统即将重启
+      system_status:
+        keywords:
+        - 系统状态
+        - 系统信息
+        - CPU使用率
+        - 内存使用
+        - 设备状态
 audio:
   sample_rate: 16000
   channels: 1

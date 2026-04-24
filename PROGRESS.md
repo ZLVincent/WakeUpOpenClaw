@@ -54,6 +54,7 @@
 | 停止播放 | done | pkill mpv |
 | 报时 | done | 本地 datetime 格式化 |
 | 系统重启 | done | 双 action 二次确认：reboot(提示) + confirm_reboot(执行 sudo reboot) |
+| 系统状态查询 | done | psutil 读取 CPU 使用率/温度、内存、磁盘、运行时间，语音口语化播报 |
 | 语音打断 (Barge-in) | done | TTS 播放期间后台运行唤醒词检测，检测到则 kill 播放进程 |
 | 流式 TTS | done | 按标点分句，asyncio.Queue 生产者-消费者，边合成边播放 |
 

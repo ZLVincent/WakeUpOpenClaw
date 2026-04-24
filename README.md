@@ -96,6 +96,8 @@ WakeUpOpenClaw/
 │       ├── config.html          #   配置管理 + 系统管理页面
 │       ├── logs.html            #   日志查看页面
 │       └── calendar.html        #   日程日历页面
+├── mcp/                         # MCP Server（OpenClaw 工具集成）
+│   └── calendar_server.py       #   日程操作 MCP Server
 ├── utils/
 │   └── logger.py                # 彩色日志（终端 + 文件轮转）
 ├── static/                      # 提示音文件
@@ -344,6 +346,41 @@ database:
 
 conversation:
   max_history_rounds: 30    # 超过后自动归档旧对话
+```
+
+## MCP Server（OpenClaw 日程工具集成）
+
+通过 MCP 协议让 OpenClaw Agent 直接操作日程，支持语音和微信。
+
+### 注册（一次性）
+
+```bash
+# 安装依赖
+pip install mcp httpx
+
+# 注册 MCP Server 到 OpenClaw
+openclaw mcp set calendar '{"command":"/path/to/venv/bin/python3","args":["/path/to/WakeUpOpenClaw/mcp/calendar_server.py"]}'
+
+# 验证
+openclaw mcp list
+```
+
+### 可用工具
+
+| 工具 | 功能 | 示例指令 |
+|------|------|----------|
+| `create_event` | 创建日程 | "帮我添加明天下午2点的会议" |
+| `update_event` | 修改日程 | "把会议改到3点" |
+| `delete_event` | 删除日程 | "删除明天的会议" |
+| `query_events` | 查询日期范围日程 | "下周有什么安排" |
+| `query_today_events` | 查询今天日程 | "今天有什么事" |
+| `query_tomorrow_events` | 查询明天日程 | "明天有什么安排" |
+| `query_week_events` | 查询本周日程 | "这周日程" |
+
+### 工作原理
+
+```
+用户 → OpenClaw Agent → MCP Server (stdio) → HTTP → localhost:8084/api/events → MySQL
 ```
 
 ## Web 界面

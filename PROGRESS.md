@@ -91,6 +91,7 @@
 | 语音日程查询 | done | 今天/明天/本周/下周/本周剩余 日程查询，多行句号分隔播报，时间口语化 |
 | 日程提醒 (TTS) | done | 后台每 60s 检查，提前 N 分钟 TTS 语音播报，受免打扰限制 |
 | 日程提醒 (微信) | done | 通过 openclaw message send --target --message 发送，不受免打扰限制 |
+| MCP 日程工具 | done | MCP Server 暴露 7 个日程工具给 OpenClaw Agent，支持语音和微信操作日程 |
 
 ### 第七阶段：本地音乐播放（已完成）
 
@@ -135,6 +136,9 @@ WakeUpOpenClaw/
 ├── skills/
 │   ├── router.py                # 本地技能路由 (关键词匹配 + 内置动作)
 │   └── music_player.py          # 本地音乐播放器 (播放列表 + mpv 管理)
+│
+├── mcp/
+│   └── calendar_server.py       # MCP Server (日程工具，供 OpenClaw Agent 调用)
 │
 ├── storage/
 │   └── database.py              # MySQL 对话历史 (aiomysql 异步)

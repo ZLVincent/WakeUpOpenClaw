@@ -135,6 +135,16 @@ skills:
         - 报时
         - 今天几号
         - 现在几点了
+      reboot:
+        keywords:
+        - 重启系统
+        - 重启树莓派
+        - 重启设备
+        reply: 确认要重启系统吗？请说确认重启来执行
+      confirm_reboot:
+        keywords:
+        - 确认重启
+        reply: 好的，系统即将重启
 audio:
   sample_rate: 16000
   channels: 1

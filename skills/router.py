@@ -151,6 +151,8 @@ class SkillRouter:
             "new_conversation": self._action_new_conversation,
             # utility
             "current_time": self._action_current_time,
+            "reboot": self._action_reboot,
+            "confirm_reboot": self._action_confirm_reboot,
         }
 
     async def match(self, text: str) -> Optional[SkillResult]:
@@ -559,4 +561,30 @@ class SkillRouter:
         return SkillResult(
             text=now.strftime("现在是%H点%M分"),
             action="current_time", skill="utility",
+        )
+
+    async def _action_reboot(
+        self, skill: Skill, action: SkillAction, user_text: str = ""
+    ) -> SkillResult:
+        """重启系统（仅提示，需二次确认）。"""
+        return SkillResult(
+            text=action.reply or "确认要重启系统吗？请说确认重启来执行",
+            action="reboot", skill="utility",
+        )
+
+    async def _action_confirm_reboot(
+        self, skill: Skill, action: SkillAction, user_text: str = ""
+    ) -> SkillResult:
+        """确认重启系统（真正执行）。"""
+        import subprocess
+        logger.info("收到确认重启系统指令，即将执行 sudo reboot")
+        subprocess.Popen(
+            ["sudo", "reboot"],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            start_new_session=True,
+        )
+        return SkillResult(
+            text=action.reply or "好的，系统即将重启",
+            action="confirm_reboot", skill="utility",
         )

@@ -657,20 +657,33 @@ class SkillRouter:
     ) -> SkillResult:
         """查询本机 IP 地址。"""
         import socket
+        import psutil
+
         lines = ["当前网络地址。"]
+
+        # 需要过滤的虚拟网卡前缀和 IP 段
+        skip_ifaces = ("lo", "utun", "tun", "veth", "docker", "br-", "virbr")
+        skip_ip_prefixes = ("127.", "198.18.", "172.17.", "169.254.")
+
         try:
             hostname = socket.gethostname()
-            # 获取局域网 IP
-            s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-            try:
-                s.connect(("8.8.8.8", 80))
-                local_ip = s.getsockname()[0]
-            finally:
-                s.close()
-            lines.append(f"局域网IP，{local_ip}。")
+            found = False
+            for iface, addrs in psutil.net_if_addrs().items():
+                if any(iface.startswith(p) for p in skip_ifaces):
+                    continue
+                for addr in addrs:
+                    if addr.family == socket.AF_INET:
+                        ip = addr.address
+                        if any(ip.startswith(p) for p in skip_ip_prefixes):
+                            continue
+                        lines.append(f"{iface}，{ip}。")
+                        found = True
+            if not found:
+                lines.append("未检测到有效的局域网IP。")
             lines.append(f"主机名，{hostname}。")
         except Exception as e:
             lines.append(f"获取IP失败，{e}。")
+
         return SkillResult(text="\n".join(lines), action="ip_address", skill="utility")
 
     async def _action_network_status(

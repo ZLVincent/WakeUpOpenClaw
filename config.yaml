@@ -127,6 +127,8 @@ skills:
         reply: 好的，已开启新对话
   utility:
     enabled: true
+    options:
+      city: 上海
     actions:
       current_time:
         keywords:
@@ -164,6 +166,11 @@ skills:
         - 网络通不通
         - 网络检测
         - 网络连通
+      morning_briefing:
+        keywords:
+        - 早上好
+        - 早安
+        - 上午好
   timer:
     enabled: true
     actions:

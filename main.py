@@ -288,6 +288,7 @@ class VoiceAssistant:
             database=self.db,
             music_player=self.music_player,
             timer_manager=self.timer_manager,
+            agent_client=self.agent_client,
         )
 
         # 日程提醒配置

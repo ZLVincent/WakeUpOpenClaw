@@ -15,6 +15,7 @@ if TYPE_CHECKING:
     from storage.database import ChatDatabase
     from skills.music_player import MusicPlayer
     from skills.timer import TimerManager
+    from agent.openclaw_client import OpenClawClient
 
 from utils.logger import get_logger
 
@@ -80,6 +81,8 @@ class SkillRouter:
         音乐播放器实例
     timer_manager : TimerManager | None
         定时器管理器实例
+    agent_client : OpenClawClient | None
+        AI Agent 客户端（供 morning_briefing 等技能调用 AI）
     """
 
     # 用于去除标点的正则（中英文标点 + 空白）
@@ -94,11 +97,13 @@ class SkillRouter:
         database=None,
         music_player=None,
         timer_manager=None,
+        agent_client=None,
     ):
         self.enabled = enabled
         self.db = database
         self.music_player = music_player
         self.timer_manager = timer_manager
+        self.agent_client = agent_client
         self.skills: dict[str, Skill] = {}
         self._action_handlers: dict[str, Callable] = {}
 
@@ -161,6 +166,7 @@ class SkillRouter:
             "system_status": self._action_system_status,
             "ip_address": self._action_ip_address,
             "network_status": self._action_network_status,
+            "morning_briefing": self._action_morning_briefing,
             # timer
             "set_timer": self._action_set_timer,
             "query_timer": self._action_query_timer,
@@ -677,6 +683,104 @@ class SkillRouter:
                 lines.append(f"{name}，{err}。")
 
         return SkillResult(text="\n".join(lines), action="network_status", skill="utility")
+
+    async def _action_morning_briefing(
+        self, skill: Skill, action: SkillAction, user_text: str = ""
+    ) -> SkillResult:
+        """
+        晨间简报：天气 + 今日头条 + 财经 + 娱乐 + 笑话。
+
+        本地获取天气（wttr.in），其余内容调用 OpenClaw AI 生成。
+        """
+        import datetime
+
+        if not self.agent_client:
+            return SkillResult(
+                text="晨间简报功能不可用，AI 未配置",
+                action="morning_briefing", skill="utility",
+            )
+
+        # 确定城市：从用户输入中提取 "早上好北京" -> "北京"，否则用配置默认
+        default_city = skill.options.get("city", "上海")
+        city = default_city
+        cleaned = self._PUNCTUATION_RE.sub("", user_text)
+        for kw in action.keywords:
+            if kw in cleaned:
+                remainder = cleaned.replace(kw, "", 1).strip()
+                if remainder and len(remainder) <= 10:
+                    city = remainder
+                break
+
+        # 获取天气
+        weather_text = await self._fetch_weather(city)
+
+        # 构造 AI prompt
+        today = datetime.date.today().strftime("%Y年%m月%d日")
+        weekday = ["周一", "周二", "周三", "周四", "周五", "周六", "周日"][datetime.date.today().weekday()]
+        prompt = (
+            f"现在是早晨的问候时间。请用中文为用户生成一份简洁的晨间简报，适合语音播报。\n"
+            f"今天是{today}，{weekday}，{city}天气：{weather_text}。\n\n"
+            f"请严格按以下顺序和格式生成内容（每个类别不超过200字）：\n"
+            f"1. 今日头条：前5条国内热点新闻，每条一句话简介\n"
+            f"2. 财经新闻：5条最新财经要点，每条一句话\n"
+            f"3. 娱乐新闻：5条娱乐圈动态，每条一句话\n"
+            f"4. 最后讲一个简短的笑话\n\n"
+            f"要求：\n"
+            f"- 开头先说\"早上好主人\"并报告今日日期和天气\n"
+            f"- 用口语化自然语言，不要 Markdown 标记\n"
+            f"- 每个类别清晰分段\n"
+            f"- 整体控制在1000字以内"
+        )
+
+        logger.info("发送晨间简报请求到 AI (city=%s)", city)
+        session_id = self.agent_client.session_id  # 使用默认 session
+        try:
+            reply = await self.agent_client.send_message(prompt, session_id=session_id)
+        except Exception as e:
+            logger.error("晨间简报 AI 调用失败: %s", e)
+            reply = ""
+
+        if not reply:
+            # AI 失败时退回到只播报天气
+            fallback = f"早上好！今天是{today}，{city}天气{weather_text}。AI 暂时不可用，稍后再试。"
+            return SkillResult(text=fallback, action="morning_briefing", skill="utility")
+
+        return SkillResult(text=reply, action="morning_briefing", skill="utility")
+
+    async def _fetch_weather(self, city: str) -> str:
+        """
+        从 wttr.in 获取指定城市的天气简报。
+
+        Returns
+        -------
+        str
+            如 "晴，22到28度" 或 "未知"（获取失败时）
+        """
+        import urllib.parse
+        # wttr.in 支持自定义格式
+        # %c 天气图标, %C 天气描述, %t 当前温度, %f 体感温度
+        # %l 位置, 今日最高/最低需要用 %h/%l 或 day-based
+        # 这里用格式化: 天气描述 + 最高/最低温度
+        city_encoded = urllib.parse.quote(city)
+        url = f"https://wttr.in/{city_encoded}?format=%C+%t&lang=zh"
+
+        try:
+            proc = await asyncio.create_subprocess_exec(
+                "curl", "-s", "--max-time", "10", url,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
+            stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=12)
+            if proc.returncode == 0:
+                text = stdout.decode("utf-8", errors="replace").strip()
+                if text and "Unknown location" not in text and len(text) < 100:
+                    return text
+        except asyncio.TimeoutError:
+            logger.warning("获取天气超时 (%s)", city)
+        except Exception as e:
+            logger.warning("获取天气失败 (%s): %s", city, e)
+
+        return "未知"
 
     # ------------------------------------------------------------------
     # timer 技能动作

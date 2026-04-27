@@ -1,0 +1,411 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>状态 - WakeUpOpenClaw</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    background: #1a1a2e;
+    color: #e0e0e0;
+    min-height: 100vh;
+  }
+  header {
+    background: #16213e;
+    padding: 12px 20px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    border-bottom: 1px solid #0f3460;
+    position: sticky;
+    top: 0;
+    z-index: 10;
+  }
+  header h1 { font-size: 18px; color: #e94560; }
+  nav { display: flex; gap: 12px; align-items: center; }
+  nav a {
+    color: #888; text-decoration: none; font-size: 13px;
+    padding: 4px 10px; border-radius: 4px; transition: all 0.2s;
+  }
+  nav a:hover, nav a.active { color: #e94560; background: #1a1a2e; }
+
+  .container { max-width: 900px; margin: 0 auto; padding: 20px; }
+
+  .toolbar {
+    display: flex; align-items: center; justify-content: space-between;
+    margin-bottom: 16px;
+  }
+  .toolbar .info { font-size: 12px; color: #666; }
+  .btn {
+    padding: 8px 16px; border: none; border-radius: 6px;
+    font-size: 13px; cursor: pointer; transition: background 0.2s;
+  }
+  .btn-primary { background: #e94560; color: #fff; }
+  .btn-primary:hover { background: #c73e54; }
+  .btn-primary:disabled { background: #555; cursor: not-allowed; }
+  .btn-secondary { background: #0f3460; color: #ccc; }
+  .btn-secondary:hover { background: #1a4a8a; }
+
+  .card {
+    background: #16213e;
+    border: 1px solid #0f3460;
+    border-radius: 8px;
+    padding: 16px 20px;
+    margin-bottom: 16px;
+  }
+  .card h2 {
+    font-size: 15px; color: #e94560;
+    margin-bottom: 12px; padding-bottom: 8px;
+    border-bottom: 1px solid #0f3460;
+    display: flex; align-items: center; gap: 8px;
+  }
+
+  /* 系统状态：指标网格 */
+  .metrics {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap: 12px;
+    margin-bottom: 14px;
+  }
+  .metric {
+    background: #1a1a2e;
+    border: 1px solid #333;
+    border-radius: 6px;
+    padding: 10px 14px;
+  }
+  .metric-label { font-size: 11px; color: #888; margin-bottom: 6px; }
+  .metric-value { font-size: 22px; font-weight: bold; color: #82b1ff; }
+  .metric-value.warning { color: #e94560; }
+  .metric-value small { font-size: 13px; opacity: 0.7; margin-left: 4px; font-weight: normal; }
+
+  /* 进度条 */
+  .bar-row {
+    margin-top: 10px;
+    font-size: 13px;
+  }
+  .bar-label {
+    display: flex; justify-content: space-between;
+    color: #aaa; margin-bottom: 4px;
+  }
+  .bar-label .value { color: #e0e0e0; }
+  .bar-label .value.warning { color: #e94560; font-weight: bold; }
+  .progress {
+    height: 8px; background: #0f3460; border-radius: 4px; overflow: hidden;
+  }
+  .progress-fill {
+    height: 100%;
+    background: linear-gradient(90deg, #4caf50, #82b1ff);
+    transition: width 0.3s;
+    border-radius: 4px;
+  }
+  .progress-fill.warning {
+    background: linear-gradient(90deg, #ff9800, #e94560);
+  }
+
+  /* IP 表格 */
+  .ip-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+  }
+  .ip-table th, .ip-table td {
+    padding: 8px 12px;
+    text-align: left;
+    border-bottom: 1px solid #0f3460;
+  }
+  .ip-table th { color: #888; font-weight: normal; font-size: 12px; }
+  .ip-table td.ip-value { font-family: monospace; color: #82b1ff; }
+  .hostname {
+    font-size: 13px; color: #aaa; margin-bottom: 8px;
+  }
+  .hostname strong { color: #e0e0e0; }
+
+  /* 网络状态 */
+  .net-list { font-size: 13px; }
+  .net-item {
+    display: flex; align-items: center; gap: 10px;
+    padding: 8px 0; border-bottom: 1px solid #0f3460;
+  }
+  .net-item:last-child { border-bottom: none; }
+  .net-dot {
+    width: 10px; height: 10px; border-radius: 50%;
+    flex-shrink: 0; background: #555;
+  }
+  .net-dot.ok { background: #4caf50; }
+  .net-dot.fail { background: #e94560; }
+  .net-dot.warn { background: #ff9800; }
+  .net-dot.pending { background: #888; animation: pulse 1s infinite; }
+  @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.3; } }
+  .net-name { min-width: 60px; color: #e0e0e0; }
+  .net-status { color: #aaa; flex: 1; }
+  .net-latency { color: #82b1ff; font-family: monospace; }
+
+  .empty, .loading {
+    text-align: center; padding: 30px; color: #666; font-size: 13px;
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>WakeUpOpenClaw</h1>
+  <nav>
+    <a href="/">聊天</a>
+    <a href="/config">配置</a>
+    <a href="/logs">日志</a>
+    <a href="/calendar">日程</a>
+    <a href="/status" class="active">状态</a>
+  </nav>
+</header>
+
+<div class="container">
+
+  <div class="toolbar">
+    <span class="info" id="last-update">加载中...</span>
+    <button class="btn btn-primary" id="refresh-btn" onclick="refreshAll()">&#x1f504; 刷新</button>
+  </div>
+
+  <!-- 系统状态 -->
+  <div class="card">
+    <h2>&#x1f4ca; 系统状态</h2>
+    <div id="system-content" class="loading">加载中...</div>
+  </div>
+
+  <!-- IP 地址 -->
+  <div class="card">
+    <h2>&#x1f310; IP 地址</h2>
+    <div id="ip-content" class="loading">加载中...</div>
+  </div>
+
+  <!-- 网络连通性 -->
+  <div class="card">
+    <h2>&#x1f4e1; 网络连通性</h2>
+    <div id="network-content" class="empty">
+      <button class="btn btn-primary" onclick="checkNetwork()">&#x1f50d; 点击检测网络连通性</button>
+    </div>
+  </div>
+
+</div>
+
+<script>
+const THRESHOLDS = {
+  cpu_percent: 80,
+  cpu_temp: 70,
+  mem_percent: 90,
+  disk_percent: 90,
+};
+
+function formatBytes(bytes) {
+  const gb = bytes / (1024 ** 3);
+  if (gb >= 1) return gb.toFixed(1) + ' GB';
+  const mb = bytes / (1024 ** 2);
+  return mb.toFixed(0) + ' MB';
+}
+
+function formatUptime(seconds) {
+  const days = Math.floor(seconds / 86400);
+  const hours = Math.floor((seconds % 86400) / 3600);
+  const minutes = Math.floor((seconds % 3600) / 60);
+  if (days > 0) return `${days}天 ${hours}小时`;
+  if (hours > 0) return `${hours}小时 ${minutes}分钟`;
+  return `${minutes}分钟`;
+}
+
+function escapeHtml(s) {
+  const d = document.createElement('div');
+  d.textContent = s;
+  return d.innerHTML;
+}
+
+// 渲染系统状态
+function renderSystem(data) {
+  if (data.error) {
+    return `<div class="empty">错误: ${escapeHtml(data.error)}</div>`;
+  }
+
+  const cpuWarn = data.cpu_percent > THRESHOLDS.cpu_percent;
+  const tempWarn = data.cpu_temp !== null && data.cpu_temp > THRESHOLDS.cpu_temp;
+  const memWarn = data.mem_percent > THRESHOLDS.mem_percent;
+  const diskWarn = data.disk_percent > THRESHOLDS.disk_percent;
+
+  let html = '<div class="metrics">';
+
+  // CPU 使用率
+  html += `<div class="metric">
+    <div class="metric-label">CPU 使用率</div>
+    <div class="metric-value ${cpuWarn ? 'warning' : ''}">${data.cpu_percent.toFixed(0)}<small>%</small></div>
+  </div>`;
+
+  // CPU 温度
+  if (data.cpu_temp !== null) {
+    html += `<div class="metric">
+      <div class="metric-label">CPU 温度</div>
+      <div class="metric-value ${tempWarn ? 'warning' : ''}">${data.cpu_temp.toFixed(0)}<small>°C</small></div>
+    </div>`;
+  }
+
+  // 运行时间
+  html += `<div class="metric">
+    <div class="metric-label">运行时间</div>
+    <div class="metric-value">${formatUptime(data.uptime_seconds)}</div>
+  </div>`;
+
+  html += '</div>';
+
+  // 内存进度条
+  html += `<div class="bar-row">
+    <div class="bar-label">
+      <span>内存</span>
+      <span class="value ${memWarn ? 'warning' : ''}">
+        ${formatBytes(data.mem_used_bytes)} / ${formatBytes(data.mem_total_bytes)} (${data.mem_percent.toFixed(0)}%)
+      </span>
+    </div>
+    <div class="progress">
+      <div class="progress-fill ${memWarn ? 'warning' : ''}" style="width:${data.mem_percent}%"></div>
+    </div>
+  </div>`;
+
+  // 磁盘进度条
+  html += `<div class="bar-row">
+    <div class="bar-label">
+      <span>磁盘</span>
+      <span class="value ${diskWarn ? 'warning' : ''}">
+        ${formatBytes(data.disk_used_bytes)} / ${formatBytes(data.disk_total_bytes)} (${data.disk_percent.toFixed(0)}%)
+      </span>
+    </div>
+    <div class="progress">
+      <div class="progress-fill ${diskWarn ? 'warning' : ''}" style="width:${data.disk_percent}%"></div>
+    </div>
+  </div>`;
+
+  return html;
+}
+
+// 渲染 IP
+function renderIp(data) {
+  if (data.error) {
+    return `<div class="empty">错误: ${escapeHtml(data.error)}</div>`;
+  }
+
+  let html = '';
+  if (data.hostname) {
+    html += `<div class="hostname">主机名: <strong>${escapeHtml(data.hostname)}</strong></div>`;
+  }
+
+  if (data.interfaces && data.interfaces.length) {
+    html += '<table class="ip-table">';
+    html += '<thead><tr><th>网卡</th><th>IP 地址</th></tr></thead><tbody>';
+    for (const iface of data.interfaces) {
+      html += `<tr>
+        <td>${escapeHtml(iface.name)}</td>
+        <td class="ip-value">${escapeHtml(iface.ip)}</td>
+      </tr>`;
+    }
+    html += '</tbody></table>';
+  } else {
+    html += '<div class="empty">未检测到有效的局域网 IP</div>';
+  }
+
+  return html;
+}
+
+// 渲染网络状态
+function renderNetwork(data) {
+  if (data.error) {
+    return `<div class="empty">错误: ${escapeHtml(data.error)}</div>`;
+  }
+
+  const targets = data.targets || [];
+  if (!targets.length) {
+    return '<div class="empty">无检测结果</div>';
+  }
+
+  let html = '<div class="net-list">';
+  for (const t of targets) {
+    let dotClass = 'fail';
+    let statusText = t.error || '不通';
+    let latencyText = '';
+
+    if (t.reachable) {
+      dotClass = 'ok';
+      statusText = '正常';
+      if (t.latency_ms !== null) {
+        latencyText = `<span class="net-latency">${t.latency_ms.toFixed(0)} ms</span>`;
+      }
+    } else if (t.error === '超时') {
+      dotClass = 'warn';
+    }
+
+    html += `<div class="net-item">
+      <span class="net-dot ${dotClass}"></span>
+      <span class="net-name">${escapeHtml(t.name)}</span>
+      <span class="net-status">${escapeHtml(statusText)}</span>
+      ${latencyText}
+    </div>`;
+  }
+  html += '</div>';
+  html += '<div style="margin-top:12px;text-align:right;">';
+  html += '<button class="btn btn-secondary" onclick="checkNetwork()">重新检测</button>';
+  html += '</div>';
+  return html;
+}
+
+function updateTimestamp() {
+  const now = new Date();
+  const pad = n => String(n).padStart(2, '0');
+  const ts = `${now.getFullYear()}-${pad(now.getMonth()+1)}-${pad(now.getDate())} ${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`;
+  document.getElementById('last-update').textContent = '最后更新: ' + ts;
+}
+
+async function loadSystem() {
+  try {
+    const res = await fetch('/api/status/system');
+    const data = await res.json();
+    document.getElementById('system-content').innerHTML = renderSystem(data);
+  } catch (e) {
+    document.getElementById('system-content').innerHTML = `<div class="empty">加载失败: ${e.message}</div>`;
+  }
+}
+
+async function loadIp() {
+  try {
+    const res = await fetch('/api/status/ip');
+    const data = await res.json();
+    document.getElementById('ip-content').innerHTML = renderIp(data);
+  } catch (e) {
+    document.getElementById('ip-content').innerHTML = `<div class="empty">加载失败: ${e.message}</div>`;
+  }
+}
+
+async function checkNetwork() {
+  const container = document.getElementById('network-content');
+  container.innerHTML = `<div class="net-list">
+    <div class="net-item"><span class="net-dot pending"></span><span class="net-name">检测中</span><span class="net-status">正在 ping 百度和谷歌...</span></div>
+  </div>`;
+  try {
+    const res = await fetch('/api/status/network');
+    const data = await res.json();
+    container.innerHTML = renderNetwork(data);
+  } catch (e) {
+    container.innerHTML = `<div class="empty">检测失败: ${e.message}</div>`;
+  }
+}
+
+async function refreshAll() {
+  const btn = document.getElementById('refresh-btn');
+  btn.disabled = true;
+  btn.textContent = '刷新中...';
+  await Promise.all([loadSystem(), loadIp()]);
+  updateTimestamp();
+  btn.disabled = false;
+  btn.innerHTML = '&#x1f504; 刷新';
+}
+
+// 初始加载（只加载系统和 IP，网络需要用户主动触发）
+refreshAll();
+</script>
+
+</body>
+</html>

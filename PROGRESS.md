@@ -82,6 +82,7 @@
 | Web 音量控制 | done | 聊天页侧边栏底部滑块，amixer 控制系统音量 |
 | Web 日志查看 | done | /logs 页面，读取日志文件，级别/模块过滤，关键词搜索高亮，自动刷新 |
 | Web 日程日历 | done | /calendar 页面，7/14天列表视图，日程增删改查，颜色分类，周末高亮 |
+| Web 系统监控 | done | /status 页面，系统状态/IP/网络连通性，资源警报阈值颜色提示，手动刷新 |
 
 ### 第五阶段：安全与运维（已完成）
 
@@ -159,15 +160,18 @@ WakeUpOpenClaw/
 │   └── database.py              # MySQL 对话历史 (aiomysql 异步)
 │
 ├── web/
-│   ├── server.py                # aiohttp 服务端 (聊天/配置/OTA/WebSocket/日志/音量)
+│   ├── server.py                # aiohttp 服务端 (聊天/配置/OTA/WebSocket/日志/音量/状态)
 │   └── templates/
 │       ├── chat.html            #   聊天页面 (对话列表 + 实时状态 + 音量控制)
 │       ├── config.html          #   配置管理 + 系统管理页面
-│       └── logs.html            #   日志查看页面
+│       ├── logs.html            #   日志查看页面
+│       ├── calendar.html        #   日程日历页面
+│       └── status.html          #   系统状态监控页面
 │
 ├── utils/
 │   ├── logger.py                # 彩色日志 (终端 + 文件轮转)
-│   └── config_resolver.py       # ${ENV_VAR} 配置值解析器
+│   ├── config_resolver.py       # ${ENV_VAR} 配置值解析器
+│   └── system_info.py           # 系统状态收集 (CPU/IP/网络)
 │
 ├── static/                      # 提示音文件
 │   ├── beep_hi.wav

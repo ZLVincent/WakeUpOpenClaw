@@ -115,6 +115,12 @@ class WebServer:
         self._app.router.add_put("/api/events/{id}", self._handle_event_update)
         self._app.router.add_delete("/api/events/{id}", self._handle_event_delete)
 
+        # 系统状态监控页面
+        self._app.router.add_get("/status", self._handle_status_page)
+        self._app.router.add_get("/api/status/system", self._handle_status_system)
+        self._app.router.add_get("/api/status/ip", self._handle_status_ip)
+        self._app.router.add_get("/api/status/network", self._handle_status_network)
+
         self._runner = web.AppRunner(self._app)
         await self._runner.setup()
         site = web.TCPSite(self._runner, self.host, self.port)
@@ -715,6 +721,44 @@ class WebServer:
             await self.db.delete_event(event_id)
             return web.json_response({"status": "ok"})
         except Exception as e:
+            return web.json_response({"error": str(e)}, status=500)
+
+    # ------------------------------------------------------------------
+    # 系统状态监控路由
+    # ------------------------------------------------------------------
+
+    async def _handle_status_page(self, request: web.Request) -> web.Response:
+        """返回系统状态页面 HTML。"""
+        return self._serve_template("status.html")
+
+    async def _handle_status_system(self, request: web.Request) -> web.Response:
+        """获取系统状态（CPU/内存/磁盘/温度/运行时间）。"""
+        from utils.system_info import get_system_info
+        try:
+            info = get_system_info()
+            return web.json_response(info)
+        except Exception as e:
+            logger.error("获取系统状态失败: %s", e)
+            return web.json_response({"error": str(e)}, status=500)
+
+    async def _handle_status_ip(self, request: web.Request) -> web.Response:
+        """获取本机 IP 地址。"""
+        from utils.system_info import get_ip_info
+        try:
+            info = get_ip_info()
+            return web.json_response(info)
+        except Exception as e:
+            logger.error("获取 IP 失败: %s", e)
+            return web.json_response({"error": str(e)}, status=500)
+
+    async def _handle_status_network(self, request: web.Request) -> web.Response:
+        """检查网络连通性（ping 百度和 Google）。"""
+        from utils.system_info import check_network
+        try:
+            results = await check_network()
+            return web.json_response({"targets": results})
+        except Exception as e:
+            logger.error("网络检测失败: %s", e)
             return web.json_response({"error": str(e)}, status=500)
 
     @staticmethod

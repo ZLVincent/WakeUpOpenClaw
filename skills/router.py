@@ -605,47 +605,34 @@ class SkillRouter:
         self, skill: Skill, action: SkillAction, user_text: str = ""
     ) -> SkillResult:
         """查看系统状态（CPU、内存、温度、磁盘、运行时间）。"""
-        import psutil
+        from utils.system_info import get_system_info
 
+        info = get_system_info()
         lines = ["当前系统状态。"]
+        lines.append(f"CPU使用率{info['cpu_percent']:.0f}%。")
+        if info["cpu_temp"] is not None:
+            lines.append(f"CPU温度{info['cpu_temp']:.0f}度。")
 
-        # CPU 使用率
-        cpu_percent = psutil.cpu_percent(interval=1)
-        lines.append(f"CPU使用率{cpu_percent:.0f}%。")
+        mem_used_gb = info["mem_used_bytes"] / (1024 ** 3)
+        mem_total_gb = info["mem_total_bytes"] / (1024 ** 3)
+        lines.append(
+            f"内存已使用{mem_used_gb:.1f}G，共{mem_total_gb:.1f}G，使用率{info['mem_percent']:.0f}%。"
+        )
 
-        # CPU 温度（树莓派）
-        try:
-            with open("/sys/class/thermal/thermal_zone0/temp", "r") as f:
-                temp = int(f.read().strip()) / 1000
-            lines.append(f"CPU温度{temp:.0f}度。")
-        except Exception:
-            pass
+        disk_used_gb = info["disk_used_bytes"] / (1024 ** 3)
+        disk_total_gb = info["disk_total_bytes"] / (1024 ** 3)
+        lines.append(
+            f"磁盘已使用{disk_used_gb:.0f}G，共{disk_total_gb:.0f}G，使用率{info['disk_percent']:.0f}%。"
+        )
 
-        # 内存
-        mem = psutil.virtual_memory()
-        mem_used_gb = mem.used / (1024 ** 3)
-        mem_total_gb = mem.total / (1024 ** 3)
-        lines.append(f"内存已使用{mem_used_gb:.1f}G，共{mem_total_gb:.1f}G，使用率{mem.percent:.0f}%。")
-
-        # 磁盘
-        disk = psutil.disk_usage("/")
-        disk_used_gb = disk.used / (1024 ** 3)
-        disk_total_gb = disk.total / (1024 ** 3)
-        lines.append(f"磁盘已使用{disk_used_gb:.0f}G，共{disk_total_gb:.0f}G，使用率{disk.percent:.0f}%。")
-
-        # 系统运行时间
-        try:
-            with open("/proc/uptime", "r") as f:
-                uptime_seconds = float(f.read().split()[0])
-            days = int(uptime_seconds // 86400)
-            hours = int((uptime_seconds % 86400) // 3600)
-            if days > 0:
-                lines.append(f"系统已运行{days}天{hours}小时。")
-            else:
-                minutes = int((uptime_seconds % 3600) // 60)
-                lines.append(f"系统已运行{hours}小时{minutes}分钟。")
-        except Exception:
-            pass
+        uptime = info["uptime_seconds"]
+        days = int(uptime // 86400)
+        hours = int((uptime % 86400) // 3600)
+        minutes = int((uptime % 3600) // 60)
+        if days > 0:
+            lines.append(f"系统已运行{days}天{hours}小时。")
+        else:
+            lines.append(f"系统已运行{hours}小时{minutes}分钟。")
 
         return SkillResult(
             text="\n".join(lines),
@@ -656,33 +643,17 @@ class SkillRouter:
         self, skill: Skill, action: SkillAction, user_text: str = ""
     ) -> SkillResult:
         """查询本机 IP 地址。"""
-        import socket
-        import psutil
+        from utils.system_info import get_ip_info
 
+        info = get_ip_info()
         lines = ["当前网络地址。"]
-
-        # 需要过滤的虚拟网卡前缀和 IP 段
-        skip_ifaces = ("lo", "utun", "tun", "veth", "docker", "br-", "virbr")
-        skip_ip_prefixes = ("127.", "198.18.", "172.17.", "169.254.")
-
-        try:
-            hostname = socket.gethostname()
-            found = False
-            for iface, addrs in psutil.net_if_addrs().items():
-                if any(iface.startswith(p) for p in skip_ifaces):
-                    continue
-                for addr in addrs:
-                    if addr.family == socket.AF_INET:
-                        ip = addr.address
-                        if any(ip.startswith(p) for p in skip_ip_prefixes):
-                            continue
-                        lines.append(f"{iface}，{ip}。")
-                        found = True
-            if not found:
-                lines.append("未检测到有效的局域网IP。")
-            lines.append(f"主机名，{hostname}。")
-        except Exception as e:
-            lines.append(f"获取IP失败，{e}。")
+        if info["interfaces"]:
+            for iface in info["interfaces"]:
+                lines.append(f"{iface['name']}，{iface['ip']}。")
+        else:
+            lines.append("未检测到有效的局域网IP。")
+        if info["hostname"]:
+            lines.append(f"主机名，{info['hostname']}。")
 
         return SkillResult(text="\n".join(lines), action="ip_address", skill="utility")
 
@@ -690,33 +661,20 @@ class SkillRouter:
         self, skill: Skill, action: SkillAction, user_text: str = ""
     ) -> SkillResult:
         """检查网络连通性（ping 百度和 Google）。"""
-        lines = ["网络连通性检测。"]
+        from utils.system_info import check_network
 
-        targets = [
-            ("百度", "baidu.com"),
-            ("谷歌", "google.com"),
-        ]
-        for name, host in targets:
-            try:
-                proc = await asyncio.create_subprocess_exec(
-                    "ping", "-c", "1", "-W", "3", host,
-                    stdout=asyncio.subprocess.PIPE,
-                    stderr=asyncio.subprocess.PIPE,
-                )
-                stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=5)
-                if proc.returncode == 0:
-                    # 提取延迟
-                    output = stdout.decode("utf-8", errors="replace")
-                    import re as _re
-                    m = _re.search(r"time[=<](\d+\.?\d*)", output)
-                    ms = m.group(1) if m else "?"
-                    lines.append(f"{name}，正常，延迟{ms}毫秒。")
+        results = await check_network()
+        lines = ["网络连通性检测。"]
+        for r in results:
+            name = r["name"]
+            if r["reachable"]:
+                if r["latency_ms"] is not None:
+                    lines.append(f"{name}，正常，延迟{r['latency_ms']:.0f}毫秒。")
                 else:
-                    lines.append(f"{name}，不通。")
-            except asyncio.TimeoutError:
-                lines.append(f"{name}，超时。")
-            except Exception:
-                lines.append(f"{name}，检测失败。")
+                    lines.append(f"{name}，正常。")
+            else:
+                err = r.get("error", "不通")
+                lines.append(f"{name}，{err}。")
 
         return SkillResult(text="\n".join(lines), action="network_status", skill="utility")
 

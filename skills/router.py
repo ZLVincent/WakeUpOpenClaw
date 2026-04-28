@@ -832,15 +832,19 @@ class SkillRouter:
             return "好冷的天，记得穿厚一点哦"
         return ""
 
-    async def _fetch_seniverse(self, url: str, api_key: str, location: str) -> Optional[dict]:
+    async def _fetch_seniverse(self, url: str, api_key: str, location: str, proxy: str = "") -> Optional[dict]:
         """调用心知天气 API，返回解析后的 JSON 或 None。"""
         import json
         import urllib.parse
         params = f"key={urllib.parse.quote(api_key)}&location={urllib.parse.quote(location)}&language=zh-Hans&unit=c"
         full_url = f"{url}?{params}"
         try:
+            cmd = ["curl", "-s", "--max-time", "8"]
+            if proxy:
+                cmd += ["-x", proxy]
+            cmd.append(full_url)
             proc = await asyncio.create_subprocess_exec(
-                "curl", "-s", "--max-time", "8", full_url,
+                *cmd,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
             )
@@ -860,6 +864,7 @@ class SkillRouter:
         """查询心知天气（今天/明天/后天/三天）。"""
         api_key = skill.options.get("api_key", "")
         default_location = skill.options.get("location", "上海")
+        proxy = skill.options.get("proxy", "")
 
         if not api_key or api_key.startswith("${"):
             return SkillResult(
@@ -873,7 +878,7 @@ class SkillRouter:
 
         # 查每日天气
         DAILY_API = "https://api.seniverse.com/v3/weather/daily.json"
-        data = await self._fetch_seniverse(DAILY_API, api_key, location)
+        data = await self._fetch_seniverse(DAILY_API, api_key, location, proxy=proxy)
 
         if not data or "results" not in data:
             logger.warning("心知天气返回无效数据: %s", data)
@@ -888,7 +893,7 @@ class SkillRouter:
         suggestion_text = ""
         if 0 in days:
             SUGGESTION_API = "https://api.seniverse.com/v3/life/suggestion.json"
-            sug_data = await self._fetch_seniverse(SUGGESTION_API, api_key, location)
+            sug_data = await self._fetch_seniverse(SUGGESTION_API, api_key, location, proxy=proxy)
             if sug_data and "results" in sug_data:
                 try:
                     suggestion_text = sug_data["results"][0]["suggestion"]["sport"]["brief"]

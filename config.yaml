@@ -39,6 +39,21 @@ tts:
   proxy: http://127.0.0.1:7890
 skills:
   enabled: true
+  weather:
+    enabled: true
+    options:
+      api_key: "${SENIVERSE_API_KEY}"
+      location: 上海
+    actions:
+      query_weather:
+        keywords:
+        - 天气
+        - 天气怎么样
+        - 今天天气
+        - 明天天气
+        - 后天天气
+        - 天气预报
+        - 三天天气
   music:
     enabled: true
     options:

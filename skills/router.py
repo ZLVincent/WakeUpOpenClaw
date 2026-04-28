@@ -167,6 +167,8 @@ class SkillRouter:
             "ip_address": self._action_ip_address,
             "network_status": self._action_network_status,
             "morning_briefing": self._action_morning_briefing,
+            # weather
+            "query_weather": self._action_query_weather,
             # timer
             "set_timer": self._action_set_timer,
             "query_timer": self._action_query_timer,
@@ -781,6 +783,137 @@ class SkillRouter:
             logger.warning("获取天气失败 (%s): %s", city, e)
 
         return "未知"
+
+    # ------------------------------------------------------------------
+    # weather 技能动作
+    # ------------------------------------------------------------------
+
+    _DAY_LABELS = ["今天", "明天", "后天"]
+
+    def _extract_weather_days(self, text: str) -> list[int]:
+        """从用户输入提取要查询的天数索引列表。"""
+        clean = self._PUNCTUATION_RE.sub("", text)
+        if any(w in clean for w in ("三天", "未来三天", "三日")):
+            return [0, 1, 2]
+        result = []
+        for i, label in enumerate(self._DAY_LABELS):
+            if label in clean:
+                result.append(i)
+        return result if result else [0]
+
+    def _extract_weather_location(self, text: str, keywords: list[str]) -> str:
+        """从用户输入提取地名。去掉关键词和时间词后的剩余部分。"""
+        clean = self._PUNCTUATION_RE.sub("", text.strip())
+        # 去掉时间词
+        for w in ("今天", "明天", "后天", "三天", "未来三天", "三日"):
+            clean = clean.replace(w, "")
+        # 去掉关键词
+        for kw in sorted(keywords, key=len, reverse=True):
+            clean = clean.replace(kw, "")
+        clean = clean.strip()
+        # 剩余合理长度则认为是地名
+        return clean if 0 < len(clean) <= 10 else ""
+
+    @staticmethod
+    def _analyze_weather(code: int, suggestion_brief: str) -> str:
+        """根据天气 code 和运动建议生成口语化建议。"""
+        if code <= 8:
+            if "适宜" in suggestion_brief:
+                return "今天天气不错，空气清新，适合出门运动哦"
+            else:
+                return "空气质量比较一般，建议减少出行"
+        elif 10 <= code <= 15:
+            return "出门记得带伞哦"
+        elif code in range(16, 19) or code in range(25, 30) or code in range(34, 37):
+            return "极端天气来临，尽量待在屋里"
+        elif code == 38:
+            return "天气炎热，记得多补充水分哦"
+        elif code == 37:
+            return "好冷的天，记得穿厚一点哦"
+        return ""
+
+    async def _fetch_seniverse(self, url: str, api_key: str, location: str) -> Optional[dict]:
+        """调用心知天气 API，返回解析后的 JSON 或 None。"""
+        import json
+        import urllib.parse
+        params = f"key={urllib.parse.quote(api_key)}&location={urllib.parse.quote(location)}&language=zh-Hans&unit=c"
+        full_url = f"{url}?{params}"
+        try:
+            proc = await asyncio.create_subprocess_exec(
+                "curl", "-s", "--max-time", "8", full_url,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
+            stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=10)
+            if proc.returncode == 0:
+                text = stdout.decode("utf-8", errors="replace").strip()
+                return json.loads(text)
+        except asyncio.TimeoutError:
+            logger.warning("心知天气 API 超时: %s", url)
+        except Exception as e:
+            logger.warning("心知天气 API 请求失败: %s", e)
+        return None
+
+    async def _action_query_weather(
+        self, skill: Skill, action: SkillAction, user_text: str = ""
+    ) -> SkillResult:
+        """查询心知天气（今天/明天/后天/三天）。"""
+        api_key = skill.options.get("api_key", "")
+        default_location = skill.options.get("location", "上海")
+
+        if not api_key or api_key.startswith("${"):
+            return SkillResult(
+                text="天气查询未配置 API Key，请设置环境变量 SENIVERSE_API_KEY",
+                action="query_weather", skill="weather",
+            )
+
+        # 提取城市和时间
+        location = self._extract_weather_location(user_text, action.keywords) or default_location
+        days = self._extract_weather_days(user_text)
+
+        # 查每日天气
+        DAILY_API = "https://api.seniverse.com/v3/weather/daily.json"
+        data = await self._fetch_seniverse(DAILY_API, api_key, location)
+
+        if not data or "results" not in data:
+            logger.warning("心知天气返回无效数据: %s", data)
+            return SkillResult(
+                text="抱歉，获取不到天气数据，请稍后再试",
+                action="query_weather", skill="weather",
+            )
+
+        daily = data["results"][0]["daily"]
+
+        # 查生活建议（仅查今天时）
+        suggestion_text = ""
+        if 0 in days:
+            SUGGESTION_API = "https://api.seniverse.com/v3/life/suggestion.json"
+            sug_data = await self._fetch_seniverse(SUGGESTION_API, api_key, location)
+            if sug_data and "results" in sug_data:
+                try:
+                    suggestion_text = sug_data["results"][0]["suggestion"]["sport"]["brief"]
+                except (KeyError, IndexError):
+                    pass
+
+        # 组合回复
+        parts = [f"{location}天气，"]
+        for idx in days:
+            if idx >= len(daily):
+                break
+            d = daily[idx]
+            label = self._DAY_LABELS[idx]
+            parts.append(f"{label}{d.get('text_day', '未知')}，{d.get('low', '?')}到{d.get('high', '?')}度。")
+
+        # 今天的建议
+        if 0 in days and suggestion_text:
+            advice = self._analyze_weather(int(daily[0].get("code_day", 0)), suggestion_text)
+            if advice:
+                parts.append(f"{advice}。")
+
+        return SkillResult(
+            text="".join(parts),
+            action="query_weather", skill="weather",
+        )
 
     # ------------------------------------------------------------------
     # timer 技能动作

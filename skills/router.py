@@ -819,7 +819,7 @@ class SkillRouter:
         """根据天气 code 和运动建议生成口语化建议。"""
         if code <= 8:
             if "适宜" in suggestion_brief:
-                return "今天天气不错，空气清新，适合出门运动哦"
+                return "天气不错，空气清新，适合出门运动哦"
             else:
                 return "空气质量比较一般，建议减少出行"
         elif 10 <= code <= 15:
@@ -889,16 +889,15 @@ class SkillRouter:
 
         daily = data["results"][0]["daily"]
 
-        # 查生活建议（仅查今天时）
+        # 查生活建议（所有查询日期都获取）
         suggestion_text = ""
-        if 0 in days:
-            SUGGESTION_API = "https://api.seniverse.com/v3/life/suggestion.json"
-            sug_data = await self._fetch_seniverse(SUGGESTION_API, api_key, location, proxy=proxy)
-            if sug_data and "results" in sug_data:
-                try:
-                    suggestion_text = sug_data["results"][0]["suggestion"]["sport"]["brief"]
-                except (KeyError, IndexError):
-                    pass
+        SUGGESTION_API = "https://api.seniverse.com/v3/life/suggestion.json"
+        sug_data = await self._fetch_seniverse(SUGGESTION_API, api_key, location, proxy=proxy)
+        if sug_data and "results" in sug_data:
+            try:
+                suggestion_text = sug_data["results"][0]["suggestion"]["sport"]["brief"]
+            except (KeyError, IndexError):
+                pass
 
         # 组合回复
         parts = [f"{location}天气，"]
@@ -909,11 +908,15 @@ class SkillRouter:
             label = self._DAY_LABELS[idx]
             parts.append(f"{label}{d.get('text_day', '未知')}，{d.get('low', '?')}到{d.get('high', '?')}度。")
 
-        # 今天的建议
-        if 0 in days and suggestion_text:
-            advice = self._analyze_weather(int(daily[0].get("code_day", 0)), suggestion_text)
-            if advice:
-                parts.append(f"{advice}。")
+        # 用第一个查询日的 code 生成建议
+        if suggestion_text and days:
+            first_idx = days[0]
+            if first_idx < len(daily):
+                advice = self._analyze_weather(
+                    int(daily[first_idx].get("code_day", 0)), suggestion_text
+                )
+                if advice:
+                    parts.append(f"{advice}。")
 
         return SkillResult(
             text="".join(parts),

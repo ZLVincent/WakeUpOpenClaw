@@ -145,6 +145,7 @@ skills:
     enabled: true
     options:
       city: 上海
+      proxy: "http://127.0.0.1:7890"
     actions:
       current_time:
         keywords:

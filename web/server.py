@@ -752,10 +752,15 @@ class WebServer:
             return web.json_response({"error": str(e)}, status=500)
 
     async def _handle_status_network(self, request: web.Request) -> web.Response:
-        """检查网络连通性（ping 百度和 Google）。"""
+        """检查网络连通性（百度 ping，谷歌 curl + 代理）。"""
         from utils.system_info import check_network
         try:
-            results = await check_network()
+            # 从 config 中读取 utility.options.proxy
+            proxy = ""
+            if self._assistant:
+                cfg = self._assistant.config.get("skills", {}).get("utility", {}).get("options", {})
+                proxy = cfg.get("proxy", "")
+            results = await check_network(proxy=proxy)
             return web.json_response({"targets": results})
         except Exception as e:
             logger.error("网络检测失败: %s", e)

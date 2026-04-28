@@ -125,31 +125,35 @@ def get_ip_info() -> dict:
     return result
 
 
-async def check_network(targets: Optional[list[tuple[str, str]]] = None) -> list[dict]:
+async def check_network(
+    targets: Optional[list[tuple]] = None,
+    proxy: str = "",
+) -> list[dict]:
     """
-    检查网络连通性，并行 ping 多个目标。
+    检查网络连通性。
 
     Parameters
     ----------
-    targets : list[tuple[str, str]]
-        [(显示名, 主机), ...] 默认 [("百度", "baidu.com"), ("谷歌", "google.com")]
+    targets : list[tuple]
+        每个元素为 (显示名, 主机, 方法)。
+        方法: "ping"（ICMP，不支持代理）或 "curl"（HTTP，支持代理）。
+        默认: 百度用 ping（国内直连），谷歌用 curl 走代理。
+    proxy : str
+        代理地址，仅 curl 方法使用，如 "http://127.0.0.1:7890"
 
     Returns
     -------
     list[dict]
-        每个目标的结果: {name, host, reachable, latency_ms, error}
+        每个目标: {name, host, reachable, latency_ms, error}
     """
     if targets is None:
-        targets = [("百度", "baidu.com"), ("谷歌", "google.com")]
+        targets = [
+            ("百度", "baidu.com", "ping"),
+            ("谷歌", "www.google.com", "curl"),
+        ]
 
-    async def _ping_one(name: str, host: str) -> dict:
-        result = {
-            "name": name,
-            "host": host,
-            "reachable": False,
-            "latency_ms": None,
-            "error": None,
-        }
+    async def _check_ping(name: str, host: str) -> dict:
+        result = {"name": name, "host": host, "reachable": False, "latency_ms": None, "error": None}
         try:
             proc = await asyncio.create_subprocess_exec(
                 "ping", "-c", "1", "-W", "3", host,
@@ -171,6 +175,41 @@ async def check_network(targets: Optional[list[tuple[str, str]]] = None) -> list
             result["error"] = f"检测失败: {e}"
         return result
 
-    # 并行 ping 所有目标
-    tasks = [_ping_one(name, host) for name, host in targets]
+    async def _check_curl(name: str, host: str) -> dict:
+        result = {"name": name, "host": host, "reachable": False, "latency_ms": None, "error": None}
+        cmd = ["curl", "-s", "-o", "/dev/null", "-w", "%{http_code}:%{time_total}",
+               "--connect-timeout", "5", f"https://{host}"]
+        if proxy:
+            cmd += ["-x", proxy]
+        try:
+            proc = await asyncio.create_subprocess_exec(
+                *cmd,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
+            stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=10)
+            if proc.returncode == 0:
+                output = stdout.decode("utf-8", errors="replace").strip()
+                parts = output.split(":")
+                http_code = int(parts[0]) if parts[0].isdigit() else 0
+                time_total = float(parts[1]) if len(parts) > 1 else 0.0
+                if http_code in range(200, 400):
+                    result["reachable"] = True
+                    result["latency_ms"] = round(time_total * 1000, 1)
+                else:
+                    result["error"] = f"HTTP {http_code}"
+            else:
+                result["error"] = "不通"
+        except asyncio.TimeoutError:
+            result["error"] = "超时"
+        except Exception as e:
+            result["error"] = f"检测失败: {e}"
+        return result
+
+    async def _check_one(name: str, host: str, method: str) -> dict:
+        if method == "curl":
+            return await _check_curl(name, host)
+        return await _check_ping(name, host)
+
+    tasks = [_check_one(name, host, method) for name, host, method in targets]
     return await asyncio.gather(*tasks)

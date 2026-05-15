@@ -241,6 +241,7 @@ calendar:
   default_remind_minutes: 5
   wechat_remind:
     enabled: true
+    channel: "openclaw-weixin"
     target: o9cq80wES_EZ3kSkYZ08KgWfiM6M@im.wechat
 web:
   enabled: true

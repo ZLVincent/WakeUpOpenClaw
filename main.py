@@ -786,6 +786,7 @@ class VoiceAssistant:
             return
 
         target = cfg.get("target", "")
+        channel = cfg.get("channel", "openclaw-weixin")
         if not target:
             logger.warning("微信提醒未配置 target 参数，跳过")
             return
@@ -793,6 +794,7 @@ class VoiceAssistant:
         cmd = [
             self.agent_client.cli_path,
             "message", "send",
+            "--channel", channel,
             "--target", target,
             "--message", message,
         ]

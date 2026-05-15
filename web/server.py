@@ -283,9 +283,10 @@ class WebServer:
             conv_id = int(request.match_info["id"])
             # 如果删除的是当前活跃对话，需要清除引用
             if (self._assistant
-                    and self._assistant._current_conversation
-                    and self._assistant._current_conversation.get("id") == conv_id):
-                self._assistant._current_conversation = None
+                    and self._assistant.conversation_manager
+                    and self._assistant.conversation_manager.current_conversation
+                    and self._assistant.conversation_manager.current_conversation.get("id") == conv_id):
+                self._assistant.conversation_manager.current_conversation = None
             await self.db.delete_conversation(conv_id)
             return web.json_response({"status": "ok"})
         except Exception as e:

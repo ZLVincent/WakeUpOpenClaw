@@ -22,9 +22,9 @@ from datetime import date, timedelta
 from typing import Optional
 
 import httpx
-from mcp.server import Server
+from mcp.server import Server, InitializationOptions
 from mcp.server.stdio import stdio_server
-from mcp.types import Tool, TextContent
+from mcp.types import Tool, TextContent, ServerCapabilities
 
 # API 基础地址，可通过环境变量覆盖
 API_BASE = os.environ.get("WAKEUP_API_BASE", "http://localhost:8084")
@@ -323,7 +323,15 @@ async def _dispatch_tool(name: str, args: dict) -> str:
 async def main():
     """启动 MCP Server（stdio 模式）。"""
     async with stdio_server() as (read_stream, write_stream):
-        await app.run(read_stream, write_stream)
+        await app.run(
+            read_stream,
+            write_stream,
+            InitializationOptions(
+                server_name="calendar",
+                server_version="1.0.0",
+                capabilities=ServerCapabilities(),
+            ),
+        )
 
 
 if __name__ == "__main__":

@@ -232,6 +232,28 @@ class RssService:
             for term in terms)]
         return (matches or episodes)[:self.max_results]
 
+    def _topic_matches(self, topic: str, episodes: list[dict]) -> list[dict]:
+        """只返回主题实际命中的条目，不把回退逻辑混入匹配结果。"""
+        ignored = {"播客", "rss", "最新", "帮我", "查询", "搜索", "找", "播放", "听"}
+        terms = [term.lower() for term in re.findall(r"[\w\u4e00-\u9fff]+", topic or "")
+                 if term.lower() not in ignored]
+        if not terms:
+            return episodes[:self.max_results]
+        return [episode for episode in episodes if any(
+            term in f"{episode.get('title', '')} {episode.get('description', '')} {episode.get('subscription_name', '')}".lower()
+            for term in terms)]
+
+    async def latest_for_topic(self, topic: str, max_results: int = None) -> tuple[list[dict], bool]:
+        """确定性地按主题取最新条目；无命中时返回全局最新作为回退。"""
+        episodes = await self.fetch_latest()
+        limit = max(1, min(int(max_results or self.max_results), 10))
+        if not topic.strip():
+            return episodes[:limit], False
+        matches = self._topic_matches(topic, episodes)
+        if matches:
+            return matches[:limit], True
+        return episodes[:limit], False
+
     async def select_episodes(self, query: str, episodes: list[dict]) -> list[dict]:
         if not episodes:
             return []

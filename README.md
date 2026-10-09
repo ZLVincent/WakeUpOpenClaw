@@ -361,6 +361,9 @@ pip install mcp httpx
 # 注册 MCP Server 到 OpenClaw
 openclaw mcp set calendar '{"command":"/path/to/venv/bin/python3","args":["/path/to/WakeUpOpenClaw/mcp/calendar_server.py"]}'
 
+# 注册 RSS 播客播放工具
+openclaw mcp set rss '{"command":"/path/to/venv/bin/python3","args":["/path/to/WakeUpOpenClaw/mcp/rss_server.py"]}'
+
 # 验证
 openclaw mcp list
 ```
@@ -376,12 +379,17 @@ openclaw mcp list
 | `query_today_events` | 查询今天日程 | "今天有什么事" |
 | `query_tomorrow_events` | 查询明天日程 | "明天有什么安排" |
 | `query_week_events` | 查询本周日程 | "这周日程" |
+| `list_rss_subscriptions` | 列出播客订阅 | "我订阅了哪些播客" |
+| `query_latest_rss` | 按主题查询最新播客 | "最近有哪些早间新闻播客" |
+| `play_latest_rss` | 按主题播放最新播客 | "播放早间新闻" |
 
 ### 工作原理
 
 ```
-用户 → OpenClaw Agent → MCP Server (stdio) → HTTP → localhost:8084/api/events → MySQL
+用户 → OpenClaw Agent → MCP Server (stdio) → HTTP → localhost:8084/api/events 或 /api/rss/* → 本机服务
 ```
+
+RSS 播放工具只接受主题关键词；RSS 选择、音频 URL 校验和本机 `mpv` 播放均在 WakeUpOpenClaw 服务内完成。
 
 ## Web 界面
 

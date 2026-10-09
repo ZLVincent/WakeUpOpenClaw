@@ -9,6 +9,7 @@ Web 界面服务模块
 """
 
 import asyncio
+import ipaddress
 import json
 import os
 import time
@@ -114,6 +115,11 @@ class WebServer:
         self._app.router.add_post("/api/events", self._handle_event_create)
         self._app.router.add_put("/api/events/{id}", self._handle_event_update)
         self._app.router.add_delete("/api/events/{id}", self._handle_event_delete)
+
+        # RSS MCP API：仅允许本机 OpenClaw MCP 进程调用。
+        self._app.router.add_get("/api/rss/subscriptions", self._handle_rss_subscriptions)
+        self._app.router.add_get("/api/rss/episodes", self._handle_rss_episodes)
+        self._app.router.add_post("/api/rss/play", self._handle_rss_play)
 
         # 系统状态监控页面
         self._app.router.add_get("/status", self._handle_status_page)
@@ -723,6 +729,79 @@ class WebServer:
             return web.json_response({"status": "ok"})
         except Exception as e:
             return web.json_response({"error": str(e)}, status=500)
+
+    # ------------------------------------------------------------------
+    # RSS MCP 路由（仅回环地址）
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _is_loopback_request(request: web.Request) -> bool:
+        try:
+            return ipaddress.ip_address(request.remote or "").is_loopback
+        except ValueError:
+            return False
+
+    def _rss_service(self):
+        return getattr(self._assistant, "rss_service", None) if self._assistant else None
+
+    @staticmethod
+    def _public_episode(episode: dict) -> dict:
+        return {key: episode.get(key) for key in (
+            "id", "title", "description", "published_at", "subscription_id", "subscription_name",
+        )}
+
+    async def _handle_rss_subscriptions(self, request: web.Request) -> web.Response:
+        if not self._is_loopback_request(request):
+            return web.json_response({"error": "仅允许本机 MCP 调用"}, status=403)
+        service = self._rss_service()
+        if not service:
+            return web.json_response({"error": "RSS 服务不可用"}, status=503)
+        try:
+            subscriptions = await service.list_subscriptions()
+            public = [
+                {key: item.get(key) for key in ("id", "name", "rss_url", "enabled")}
+                for item in subscriptions
+            ]
+            return web.json_response({"subscriptions": public})
+        except Exception as exc:
+            return web.json_response({"error": str(exc)}, status=503)
+
+    async def _handle_rss_episodes(self, request: web.Request) -> web.Response:
+        if not self._is_loopback_request(request):
+            return web.json_response({"error": "仅允许本机 MCP 调用"}, status=403)
+        service = self._rss_service()
+        if not service:
+            return web.json_response({"error": "RSS 服务不可用"}, status=503)
+        topic = request.query.get("topic", "").strip()[:200]
+        try:
+            max_results = max(1, min(int(request.query.get("max_results", 3)), 10))
+            episodes, matched = await service.latest_for_topic(topic, max_results)
+            return web.json_response({"episodes": [self._public_episode(item) for item in episodes], "matched": matched})
+        except Exception as exc:
+            return web.json_response({"error": str(exc)}, status=503)
+
+    async def _handle_rss_play(self, request: web.Request) -> web.Response:
+        if not self._is_loopback_request(request):
+            return web.json_response({"error": "仅允许本机 MCP 调用"}, status=403)
+        service = self._rss_service()
+        player = getattr(self._assistant, "music_player", None) if self._assistant else None
+        if not service or not player:
+            return web.json_response({"error": "RSS 播放服务不可用"}, status=503)
+        try:
+            data = await request.json()
+            topic = str(data.get("topic", "")).strip()[:200]
+            episodes, matched = await service.latest_for_topic(topic, 1)
+            if not episodes:
+                return web.json_response({"episode": None, "matched": False})
+            episode = episodes[0]
+            media_url = await service.prepare_media_url(episode["media_url"])
+            if player.is_playing:
+                await player.stop()
+            await player.play_url(media_url, title=episode.get("title", "播客节目"))
+            return web.json_response({"episode": self._public_episode(episode), "matched": matched})
+        except Exception as exc:
+            logger.warning("RSS MCP 播放失败: %s", exc)
+            return web.json_response({"error": "RSS 播放失败"}, status=503)
 
     # ------------------------------------------------------------------
     # 系统状态监控路由

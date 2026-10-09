@@ -15,7 +15,25 @@ class RssActionsMixin:
     @staticmethod
     def _rss_index(text: str):
         match = re.search(r"第\s*(\d+)\s*个?", text or "")
-        return int(match.group(1)) - 1 if match else None
+        if match:
+            return int(match.group(1)) - 1
+
+        chinese_match = re.search(r"第\s*([一二三四五六七八九十]+)\s*个", text or "")
+        if not chinese_match:
+            return None
+        numeral = chinese_match.group(1)
+        digits = {"一": 1, "二": 2, "三": 3, "四": 4, "五": 5, "六": 6, "七": 7, "八": 8, "九": 9}
+        if numeral == "十":
+            return 9
+        if len(numeral) == 1 and numeral in digits:
+            return digits[numeral] - 1
+        if len(numeral) == 2 and numeral[0] == "十" and numeral[1] in digits:
+            return 10 + digits[numeral[1]] - 1
+        if len(numeral) == 2 and numeral[0] in digits and numeral[1] == "十":
+            return digits[numeral[0]] * 10 - 1
+        if len(numeral) == 3 and numeral[0] in digits and numeral[1] == "十" and numeral[2] in digits:
+            return digits[numeral[0]] * 10 + digits[numeral[2]] - 1
+        return None
 
     def _rss_query_after_keyword(self, text: str, keywords: list[str]) -> str:
         for keyword in sorted(keywords, key=len, reverse=True):

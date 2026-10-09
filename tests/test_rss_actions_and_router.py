@@ -26,6 +26,17 @@ def rss_config():
     }
 
 
+def test_rss_selection_index_accepts_chinese_ordinals_and_keeps_arabic_numbers():
+    """所有 RSS 确认/播放命令应共享同一套一基序号到零基索引解析。"""
+    from skills.actions_rss import RssActionsMixin
+
+    assert RssActionsMixin._rss_index("确认订阅第一个") == 0
+    assert RssActionsMixin._rss_index("确认删除订阅第二个") == 1
+    assert RssActionsMixin._rss_index("播放第十个") == 9
+    assert RssActionsMixin._rss_index("确认订阅第 2 个") == 1
+    assert RssActionsMixin._rss_index("播放第10个") == 9
+
+
 def test_longest_keyword_wins_over_generic_music_play_for_rss_result():
     """“播放第 2 个”必须命中 RSS，而不是 music 的通用“播放”。"""
     from skills.router import SkillRouter
@@ -109,4 +120,3 @@ def test_stop_action_stops_rss_playback_even_without_local_playlist():
     result = run(router.match("停止播放"))
     assert result.action == "stop"
     player.stop.assert_awaited_once()
-

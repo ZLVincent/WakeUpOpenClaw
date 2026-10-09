@@ -33,6 +33,7 @@ from core.dnd_controller import DNDController
 from core.reminder_service import ReminderService
 from core.state import State
 from skills.music_player import MusicPlayer
+from skills.rss_service import RssService
 from skills.router import SkillRouter
 from skills.timer import TimerManager, format_duration
 from storage.database import ChatDatabase
@@ -217,6 +218,12 @@ class VoiceAssistant:
         )
 
         skills_cfg = config.get("skills", {})
+        rss_cfg = skills_cfg.get("rss", {})
+        self.rss_service = RssService(
+            database=self.db,
+            agent_client=self.agent_client,
+            config=rss_cfg.get("options", {}),
+        )
         skills_groups = {k: v for k, v in skills_cfg.items() if k != "enabled" and isinstance(v, dict)}
         self.skill_router = SkillRouter(
             skills_config=skills_groups,
@@ -225,6 +232,7 @@ class VoiceAssistant:
             music_player=self.music_player,
             timer_manager=self.timer_manager,
             agent_client=self.agent_client,
+            rss_service=self.rss_service,
         )
 
         self.conversation_manager = ConversationManager(
@@ -278,6 +286,8 @@ class VoiceAssistant:
         try:
             await self.db.initialize()
             logger.info("数据库初始化成功")
+            if self.config.get("skills", {}).get("rss", {}).get("enabled", True):
+                await self.rss_service.seed_defaults()
         except Exception as e:
             logger.warning("数据库初始化失败，对话历史和日程将不会持久化: %s", e, exc_info=True)
 

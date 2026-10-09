@@ -139,6 +139,23 @@ class MusicPlayer:
         )
         return valid_songs[0]
 
+    async def play_url(self, url: str, title: str = "") -> Optional[dict]:
+        """播放一个远程媒体 URL，并复用当前受控播放器进程。"""
+        if not url:
+            return None
+        await self.stop()
+        track = {
+            "name": title or "网络媒体",
+            "file_path": url,
+            "source": "rss",
+        }
+        self._playlist = [track]
+        self._current_index = 0
+        self._stopped = False
+        self._play_task = asyncio.create_task(self._play_loop())
+        logger.info("网络媒体播放: %s", track["name"])
+        return track
+
     async def next_track(self) -> Optional[dict]:
         """
         跳到下一首。

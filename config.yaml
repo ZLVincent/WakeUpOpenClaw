@@ -100,6 +100,53 @@ skills:
         - 音量调小
         - 声音小一点
         reply: 好的，已调小音量
+  rss:
+    enabled: true
+    options:
+      request_timeout: 15
+      max_results: 3
+      max_response_bytes: 2000000
+      ai_session_id: rss-skill
+      confirmation_ttl_seconds: 300
+      result_ttl_seconds: 600
+      seed_subscriptions:
+      - name: 忽左忽右
+        rss_url: https://justpodmedia.com/rss/left-right.xml
+      - name: 不明白播客
+        rss_url: https://feeds.acast.com/public/shows/68004395b4ef799a7a410371
+    actions:
+      list_rss_subscriptions:
+        keywords:
+        - RSS列表
+        - 播客列表
+        - 我的播客
+      query_rss:
+        keywords:
+        - 最新播客
+        - 最新RSS
+        - 查询RSS
+        - 搜索播客
+        - RSS播客
+        - 播客
+        - RSS
+      add_rss_subscription:
+        keywords:
+        - 订阅播客
+        - 添加RSS
+        - 添加播客
+      confirm_rss_subscription:
+        keywords:
+        - 确认订阅
+      remove_rss_subscription:
+        keywords:
+        - 删除播客
+        - 取消订阅
+      confirm_remove_rss_subscription:
+        keywords:
+        - 确认删除订阅
+      play_rss_result:
+        keywords:
+        - 播放第
   calendar:
     enabled: true
     actions:

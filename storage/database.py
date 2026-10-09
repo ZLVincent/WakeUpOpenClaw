@@ -7,6 +7,7 @@
 
 import asyncio
 import datetime
+import hashlib
 import time
 import uuid
 from typing import Optional
@@ -67,6 +68,20 @@ CREATE TABLE IF NOT EXISTS zlpi_events (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 """
 
+_CREATE_RSS_SUBSCRIPTIONS_TABLE = """
+CREATE TABLE IF NOT EXISTS zlpi_rss_subscriptions (
+    id              BIGINT AUTO_INCREMENT PRIMARY KEY,
+    name            VARCHAR(200) NOT NULL,
+    rss_url         VARCHAR(2048) NOT NULL,
+    rss_url_hash    CHAR(64) NOT NULL,
+    enabled         TINYINT(1) DEFAULT 1,
+    created_at      DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at      DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    UNIQUE KEY uq_rss_url_hash (rss_url_hash),
+    INDEX idx_rss_enabled (enabled)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+"""
+
 
 def generate_session_id() -> str:
     """生成新的 session-id (UUID)。"""
@@ -96,6 +111,14 @@ class ChatDatabase:
         database: str = "wakeup_openclaw",
         pool_size: int = 5,
     ):
+        if isinstance(host, dict):
+            config = host
+            host = config.get("host", "localhost")
+            port = config.get("port", 3306)
+            user = config.get("user", "root")
+            password = config.get("password", "")
+            database = config.get("database", "wakeup_openclaw")
+            pool_size = config.get("pool_size", 5)
         self.host = host
         self.port = port
         self.user = user
@@ -168,6 +191,7 @@ class ChatDatabase:
                         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
                     """)
                     logger.info("events 表已通过简化 SQL 创建")
+                await cur.execute(_CREATE_RSS_SUBSCRIPTIONS_TABLE)
         logger.info("数据表已就绪")
 
     async def close(self) -> None:
@@ -176,6 +200,45 @@ class ChatDatabase:
             self._pool.close()
             await self._pool.wait_closed()
             logger.info("MySQL 连接池已关闭")
+
+    # ------------------------------------------------------------------
+    # RSS 订阅
+    # ------------------------------------------------------------------
+
+    async def add_rss_subscription(self, name: str, rss_url: str) -> bool:
+        async with self._pool.acquire() as conn:
+            async with conn.cursor() as cur:
+                await cur.execute(
+                    "INSERT INTO zlpi_rss_subscriptions (name, rss_url, rss_url_hash, enabled) VALUES (%s, %s, %s, 1) "
+                    "ON DUPLICATE KEY UPDATE name = VALUES(name), rss_url = VALUES(rss_url), enabled = 1",
+                    (name[:200], rss_url, hashlib.sha256(rss_url.encode("utf-8")).hexdigest()),
+                )
+        return True
+
+    async def list_rss_subscriptions(self, enabled_only: bool = True) -> list:
+        sql = "SELECT id, name, rss_url, enabled, created_at, updated_at FROM zlpi_rss_subscriptions"
+        if enabled_only:
+            sql += " WHERE enabled = 1"
+        sql += " ORDER BY name ASC"
+        async with self._pool.acquire() as conn:
+            async with conn.cursor(aiomysql.DictCursor) as cur:
+                await cur.execute(sql)
+                return await cur.fetchall()
+
+    async def remove_rss_subscription(self, subscription_id: int) -> bool:
+        async with self._pool.acquire() as conn:
+            async with conn.cursor() as cur:
+                await cur.execute("DELETE FROM zlpi_rss_subscriptions WHERE id = %s", (subscription_id,))
+                return cur.rowcount > 0
+
+    async def seed_rss_subscriptions(self, defaults: list[dict]) -> None:
+        existing = await self.list_rss_subscriptions(enabled_only=False)
+        existing_urls = {item.get("rss_url") for item in existing}
+        for item in defaults:
+            name, rss_url = item.get("name", ""), item.get("rss_url", "")
+            if name and rss_url and rss_url not in existing_urls:
+                await self.add_rss_subscription(name=name, rss_url=rss_url)
+                existing_urls.add(rss_url)
 
     # ------------------------------------------------------------------
     # 对话管理

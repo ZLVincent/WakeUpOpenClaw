@@ -23,6 +23,7 @@ from skills.actions_calendar import CalendarActionsMixin
 from skills.actions_utility import UtilityActionsMixin
 from skills.actions_weather import WeatherActionsMixin
 from skills.actions_timer import TimerActionsMixin
+from skills.actions_rss import RssActionsMixin
 
 logger = get_logger("skills")
 
@@ -35,6 +36,7 @@ SKILL_DISPLAY_NAMES = {
     "utility": "通用工具",
     "weather": "天气查询",
     "timer": "定时器",
+    "rss": "RSS 播客",
 }
 
 
@@ -75,6 +77,7 @@ class SkillRouter(
     UtilityActionsMixin,
     WeatherActionsMixin,
     TimerActionsMixin,
+    RssActionsMixin,
 ):
     """
     技能路由器。
@@ -107,12 +110,14 @@ class SkillRouter(
         music_player=None,
         timer_manager=None,
         agent_client=None,
+        rss_service=None,
     ):
         self.enabled = enabled
         self.db = database
         self.music_player = music_player
         self.timer_manager = timer_manager
         self.agent_client = agent_client
+        self.rss_service = rss_service
         self.skills: dict[str, Skill] = {}
         self._action_handlers: dict[str, Callable] = {}
 
@@ -175,6 +180,14 @@ class SkillRouter(
             "set_timer": self._action_set_timer,
             "query_timer": self._action_query_timer,
             "cancel_timer": self._action_cancel_timer,
+            # rss
+            "list_rss_subscriptions": self._action_list_rss_subscriptions,
+            "query_rss": self._action_query_rss,
+            "add_rss_subscription": self._action_add_rss_subscription,
+            "confirm_rss_subscription": self._action_confirm_rss_subscription,
+            "remove_rss_subscription": self._action_remove_rss_subscription,
+            "confirm_remove_rss_subscription": self._action_confirm_remove_rss_subscription,
+            "play_rss_result": self._action_play_rss_result,
         }
 
     async def match(self, text: str) -> Optional[SkillResult]:
@@ -187,17 +200,24 @@ class SkillRouter(
 
         text_clean = self._PUNCTUATION_RE.sub("", text.strip().lower())
 
+        candidates = []
+        order = 0
         for skill in self.skills.values():
             if not skill.enabled:
                 continue
             for action in skill.actions:
                 for keyword in action.keywords:
-                    if keyword.lower() in text_clean:
-                        logger.info(
-                            "技能匹配: '%s' -> skill=%s, action=%s (keyword='%s')",
-                            text, skill.name, action.name, keyword,
-                        )
-                        return await self._execute(skill, action, text)
+                    normalized_keyword = self._PUNCTUATION_RE.sub("", keyword.lower())
+                    if normalized_keyword and normalized_keyword in text_clean:
+                        candidates.append((len(normalized_keyword), order, skill, action, keyword))
+                    order += 1
+        if candidates:
+            _, _, skill, action, keyword = max(candidates, key=lambda item: (item[0], -item[1]))
+            logger.info(
+                "技能匹配: '%s' -> skill=%s, action=%s (keyword='%s')",
+                text, skill.name, action.name, keyword,
+            )
+            return await self._execute(skill, action, text)
         return None
 
     async def _execute(self, skill: Skill, action: SkillAction, user_text: str = "") -> SkillResult:

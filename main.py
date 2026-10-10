@@ -395,6 +395,7 @@ class VoiceAssistant:
 
     async def _conversation_loop(self) -> None:
         self._conversation_round = 0
+        followup_listen_timeout = None
 
         while self._running and self._conversation_round < self.max_rounds:
             self._conversation_round += 1
@@ -404,7 +405,8 @@ class VoiceAssistant:
             )
 
             self._set_state(State.LISTENING)
-            recognized_text = await self._listen_and_recognize()
+            recognized_text = await self._listen_and_recognize(timeout=followup_listen_timeout)
+            followup_listen_timeout = None
 
             if not recognized_text:
                 logger.info("未识别到有效语音内容，退出对话")
@@ -426,8 +428,15 @@ class VoiceAssistant:
                     self._set_state(State.SPEAKING)
                     await self.tts_engine.speak(skill_result.text)
 
-                if self.conversation_mode == "single":
+                await_followup = bool(skill_result.extra.get("await_followup"))
+                if self.conversation_mode == "single" and not await_followup:
                     break
+
+                if await_followup:
+                    followup_listen_timeout = skill_result.extra.get(
+                        "followup_timeout", self.continue_wait_timeout,
+                    )
+                    logger.info("RSS 等待后续指令，最长 %.1f 秒", followup_listen_timeout)
                 continue
 
             await self.conversation_manager.save_message("user", recognized_text, "voice")
@@ -548,7 +557,7 @@ class VoiceAssistant:
 
         return False
 
-    async def _listen_and_recognize(self) -> str:
+    async def _listen_and_recognize(self, timeout: Optional[float] = None) -> str:
         logger.info("开始录音，请说话...")
 
         audio_stream = AudioStreamGenerator(
@@ -564,7 +573,7 @@ class VoiceAssistant:
                     audio_generator=audio_stream,
                     sample_rate=self.recorder.sample_rate,
                 ),
-                timeout=self.silence_timeout,
+                timeout=timeout if timeout is not None else self.silence_timeout,
             )
         except asyncio.TimeoutError:
             logger.info("录音超时 (%ds)，无语音输入", self.silence_timeout)

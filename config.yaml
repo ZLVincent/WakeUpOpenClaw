@@ -108,6 +108,7 @@ skills:
       ai_session_id: rss-skill
       confirmation_ttl_seconds: 300
       result_ttl_seconds: 600
+      followup_wait_timeout: 20
       seed_subscriptions:
       - name: 忽左忽右
         rss_url: https://justpodmedia.com/rss/left-right.xml
@@ -146,6 +147,11 @@ skills:
       play_rss_result:
         keywords:
         - 播放第
+      cancel_rss_followup:
+        keywords:
+        - 取消
+        - 不用了
+        - 算了
   calendar:
     enabled: true
     actions:

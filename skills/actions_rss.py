@@ -45,6 +45,36 @@ class RssActionsMixin:
     def _rss_pending_valid(self, key: str, ttl: int) -> bool:
         return bool(getattr(self, key, None)) and time.monotonic() - getattr(self, key + "_at", 0) <= ttl
 
+    def _rss_followup_result(self, text: str, skill, action):
+        """创建需要用户紧接着选择或确认的 RSS 回复。"""
+        timeout = float(skill.options.get("followup_wait_timeout", 20))
+        self._rss_followup_at = time.monotonic()
+        return self._make_result(
+            text,
+            action.name,
+            "rss",
+            extra={"await_followup": True, "followup_timeout": max(timeout, 1)},
+        )
+
+    def _rss_has_active_followup(self, skill) -> bool:
+        """判断短暂连续追问窗口是否仍有效。"""
+        timeout = float(skill.options.get("followup_wait_timeout", 20))
+        followup_at = getattr(self, "_rss_followup_at", 0)
+        return bool(followup_at) and time.monotonic() - followup_at <= max(timeout, 1)
+
+    def _rss_clear_followup(self) -> None:
+        self._rss_followup_at = 0
+
+    async def _action_cancel_rss_followup(self, skill, action, user_text=""):
+        """仅在 RSS 有待选择内容时消费取消指令，避免抢走普通对话。"""
+        if not self._rss_has_active_followup(skill):
+            return None
+        self._rss_pending_add = []
+        self._rss_pending_remove = []
+        self._rss_last_results = []
+        self._rss_clear_followup()
+        return self._make_result("已取消本次播客选择", "cancel_followup", "rss")
+
     async def _action_list_rss_subscriptions(self, skill, action, user_text=""):
         unavailable = self._rss_service_or_result(action)
         if unavailable:
@@ -75,7 +105,7 @@ class RssActionsMixin:
         if summary:
             lines.append("摘要：" + summary)
         lines.append("请说播放第几个")
-        return self._make_result("\n".join(lines), action.name, "rss")
+        return self._rss_followup_result("\n".join(lines), skill, action)
 
     async def _action_add_rss_subscription(self, skill, action, user_text=""):
         unavailable = self._rss_service_or_result(action)
@@ -90,10 +120,11 @@ class RssActionsMixin:
         self._rss_pending_add, self._rss_pending_add_at = candidates, time.monotonic()
         lines = ["找到以下可订阅节目："] + [f"{index}. {item['name']}" for index, item in enumerate(candidates, 1)]
         lines.append("请说确认订阅第 1 个")
-        return self._make_result("\n".join(lines), action.name, "rss")
+        return self._rss_followup_result("\n".join(lines), skill, action)
 
     async def _action_confirm_rss_subscription(self, skill, action, user_text=""):
         ttl, index = int(skill.options.get("confirmation_ttl_seconds", 300)), self._rss_index(user_text)
+        self._rss_clear_followup()
         if not self._rss_pending_valid("_rss_pending_add", ttl) or index is None or not 0 <= index < len(self._rss_pending_add):
             return self._make_result("没有有效的待确认订阅，请先搜索播客", action.name, "rss")
         candidate = self._rss_pending_add[index]
@@ -121,10 +152,11 @@ class RssActionsMixin:
         self._rss_pending_remove, self._rss_pending_remove_at = matches, time.monotonic()
         lines = ["请选择要删除的订阅："] + [f"{index}. {item.get('name', '未命名')}" for index, item in enumerate(matches, 1)]
         lines.append("请说确认删除订阅第 1 个")
-        return self._make_result("\n".join(lines), action.name, "rss")
+        return self._rss_followup_result("\n".join(lines), skill, action)
 
     async def _action_confirm_remove_rss_subscription(self, skill, action, user_text=""):
         ttl, index = int(skill.options.get("confirmation_ttl_seconds", 300)), self._rss_index(user_text)
+        self._rss_clear_followup()
         if not self._rss_pending_valid("_rss_pending_remove", ttl) or index is None or not 0 <= index < len(self._rss_pending_remove):
             return self._make_result("没有有效的待删除订阅，请先选择播客", action.name, "rss")
         candidate = self._rss_pending_remove[index]
@@ -139,6 +171,7 @@ class RssActionsMixin:
 
     async def _action_play_rss_result(self, skill, action, user_text=""):
         index, ttl = self._rss_index(user_text), int(skill.options.get("result_ttl_seconds", 600))
+        self._rss_clear_followup()
         if not self._rss_pending_valid("_rss_last_results", ttl) or index is None or not 0 <= index < len(self._rss_last_results):
             return self._make_result("请先查询播客，再说播放第几个", action.name, "rss")
         if not self.music_player:

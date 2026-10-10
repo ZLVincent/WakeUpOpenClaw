@@ -188,6 +188,7 @@ class SkillRouter(
             "remove_rss_subscription": self._action_remove_rss_subscription,
             "confirm_remove_rss_subscription": self._action_confirm_remove_rss_subscription,
             "play_rss_result": self._action_play_rss_result,
+            "cancel_rss_followup": self._action_cancel_rss_followup,
         }
 
     async def match(self, text: str) -> Optional[SkillResult]:
@@ -220,13 +221,13 @@ class SkillRouter(
             return await self._execute(skill, action, text)
         return None
 
-    async def _execute(self, skill: Skill, action: SkillAction, user_text: str = "") -> SkillResult:
+    async def _execute(self, skill: Skill, action: SkillAction, user_text: str = "") -> Optional[SkillResult]:
         """执行匹配到的操作。"""
         handler = self._action_handlers.get(action.name)
         if handler:
             return await handler(skill, action, user_text)
         return SkillResult(text=action.reply or "好的", action=action.name, skill=skill.name)
 
-    def _make_result(self, text: str, action: str, skill: str) -> SkillResult:
+    def _make_result(self, text: str, action: str, skill: str, extra: Optional[dict] = None) -> SkillResult:
         """便捷方法：创建 SkillResult。"""
-        return SkillResult(text=text, action=action, skill=skill)
+        return SkillResult(text=text, action=action, skill=skill, extra=extra or {})

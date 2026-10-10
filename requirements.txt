@@ -25,3 +25,9 @@ aiohttp>=3.10.0         # 绑定公网地址的 RSS 拉取与本地音频流代�
 #   3. cd snowboy/swig/Python3 && make
 #   4. 将编译产物复制到项目的 snowboy/ 目录
 #   详见 config.yaml 中的说明
+
+# -- openWakeWord (engine: "openwakeword") --
+#   pip install openwakeword numpy
+#   在 config.yaml 的 wake_up.openwakeword 中指定自训练模型路径、模型名称和阈值。
+openwakeword>=0.6.0     # 本地开源唤醒词检测
+numpy>=1.24.0           # openWakeWord 音频帧转换

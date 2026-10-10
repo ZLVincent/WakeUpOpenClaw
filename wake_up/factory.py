@@ -11,7 +11,7 @@ from wake_up.base import BaseWakeWordDetector
 logger = get_logger("wake_up")
 
 # 支持的引擎名称
-SUPPORTED_ENGINES = ("porcupine", "snowboy")
+SUPPORTED_ENGINES = ("porcupine", "snowboy", "openwakeword")
 
 
 def create_detector(config: dict) -> BaseWakeWordDetector:
@@ -47,6 +47,9 @@ def create_detector(config: dict) -> BaseWakeWordDetector:
     elif engine == "snowboy":
         return _create_snowboy(config.get("snowboy", {}))
 
+    elif engine == "openwakeword":
+        return _create_openwakeword(config.get("openwakeword", {}))
+
     else:
         logger.critical(
             "不支持的唤醒词引擎: '%s' (可选: %s)",
@@ -80,4 +83,16 @@ def _create_snowboy(cfg: dict) -> BaseWakeWordDetector:
         audio_gain=cfg.get("audio_gain", 1.0),
         apply_frontend=cfg.get("apply_frontend", False),
         snowboy_lib_path=cfg.get("snowboy_lib_path", "./snowboy"),
+    )
+
+
+def _create_openwakeword(cfg: dict) -> BaseWakeWordDetector:
+    """创建 openWakeWord 检测器。"""
+    from wake_up.openwakeword_detector import OpenWakeWordDetector
+
+    return OpenWakeWordDetector(
+        model_path=cfg.get("model_path", ""),
+        model_name=cfg.get("model_name", ""),
+        threshold=cfg.get("threshold", 0.5),
+        inference_framework=cfg.get("inference_framework"),
     )

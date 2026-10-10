@@ -11,6 +11,14 @@ wake_up:
     access_key: ${PICOVOICE_ACCESS_KEY}
     keyword_path: ./models/wakeword.ppn
     sensitivity: 0.5
+  # -- openWakeWord (engine: "openwakeword") --
+  # 请把自行训练的 .onnx 或 .tflite 模型放到本地，并填写模型输出名称。
+  openwakeword:
+    model_path: ./models/hey_vincent.onnx
+    model_name: hey_vincent
+    threshold: 0.5
+    # 可选：onnx 或 tflite；留空时按模型后缀自动选择。
+    inference_framework: onnx
 asr:
   server_url: ws://localhost:10095
   ssl_enabled: false
